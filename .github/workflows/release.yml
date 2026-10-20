@@ -19,6 +19,10 @@ on:
 permissions:
   contents: write
 
+# A tag push and a manual rebuild of the same tag must not upload over each other.
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
 env:
   TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -28,7 +32,7 @@ jobs:
   draft:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
       - name: Create or reuse the draft release
@@ -75,7 +79,7 @@ jobs:
             suffix: amd64.AppImage
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
 
@@ -86,7 +90,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
             libayatana-appindicator3-dev libxdo-dev libssl-dev patchelf file
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -109,7 +113,16 @@ jobs:
         shell: bash
         run: |
           version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          src="$(ls src-tauri/target/${{ matrix.target }}/release/bundle/${{ matrix.dir }}/${{ matrix.glob }} | head -1)"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tauri.conf.json says $version but the tag is $TAG"; exit 1
+          fi
+          # Only this version's file: the Rust cache may bring back bundles from earlier builds.
+          shopt -s nullglob
+          found=(src-tauri/target/${{ matrix.target }}/release/bundle/${{ matrix.dir }}/*_${version}_${{ matrix.glob }})
+          if [ ${#found[@]} -ne 1 ]; then
+            echo "::error::Expected one installer for $version, found ${#found[@]}: ${found[*]}"; exit 1
+          fi
+          src="${found[0]}"
           mkdir -p release
           # GitHub turns spaces in file names into dots, so publish a space-free name.
           cp "$src" "release/Project-Hub_${version}_${{ matrix.suffix }}"
@@ -123,5 +136,13 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      # All four installers are in place, so the release can go live.
-      - run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+      # All four installers are in place, so the release can go live. Only the highest version
+      # may be "Latest": that is the release the in-app updater reads, and rebuilding an old tag
+      # must not send installed copies back to it.
+      - name: Publish the release
+        run: |
+          newest="$(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          latest=false
+          [ "$TAG" = "$newest" ] && latest=true
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest="$latest"

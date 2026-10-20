@@ -122,13 +122,12 @@ if (repo.visibility !== "PUBLIC") fail(`Repository ${REPO} is ${repo.visibility.
 
 const current = JSON.parse(fs.readFileSync(files.conf, "utf8")).version;
 const version = nextVersion(current, options.bump);
-// Re-running with the current version retries a release whose upload failed.
+// With --local, re-running with the current version retries a release whose upload failed.
 if (!newerThan(version, current) && version !== current) fail(`${version} is not newer than the current ${current}.`);
 const tag = `v${version}`;
+const rebuild = `gh workflow run ${WORKFLOW} --repo ${REPO} -f tag=${tag}`;
 if (capture("gh", ["release", "view", tag, "--repo", REPO, "--json", "tagName"])) {
-  fail(
-    `Release ${tag} already exists on GitHub.\n  To build its installers again: gh workflow run ${WORKFLOW} --repo ${REPO} -f tag=${tag}`,
-  );
+  fail(`Release ${tag} already exists on GitHub.\n  To build its installers again: ${rebuild}`);
 }
 
 // Building every platform means handing the tag to GitHub Actions: macOS and Linux installers
@@ -137,7 +136,10 @@ if (!options.local) {
   const branch = capture("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
   if (!branch || branch === "HEAD") fail("Not on a branch. Check out main first.");
   if (capture("git", ["status", "--porcelain"])) fail("There are uncommitted changes. Commit or stash them first, so the release commit only contains the version bump.");
-  if (capture("git", ["tag", "-l", tag])) fail(`Tag ${tag} already exists locally. Remove it with: git tag -d ${tag}`);
+  // A pushed tag without a release means the build failed before it got going: rebuild, don't re-tag.
+  if (version === current || capture("git", ["tag", "-l", tag]) || capture("git", ["ls-remote", "--tags", "origin", tag])) {
+    fail(`${tag} is already tagged. To build its installers again: ${rebuild}`);
+  }
 
   step(`Version ${current} → ${version}`);
   setVersion(version);
@@ -169,7 +171,7 @@ if (!options.local) {
     process.exit(0);
   }
   if (!run("gh", ["run", "watch", String(runId), "--repo", REPO, "--exit-status"])) {
-    fail(`The build failed. See https://github.com/${REPO}/actions/runs/${runId} , then rerun it with: gh workflow run ${WORKFLOW} --repo ${REPO} -f tag=${tag}`);
+    fail(`The build failed. See https://github.com/${REPO}/actions/runs/${runId} , then rerun it with: ${rebuild}`);
   }
   console.log(`\n✔ Released ${tag} for Windows, macOS and Linux. Installed copies will offer the update on their next check.\n`);
   process.exit(0);

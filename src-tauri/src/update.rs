@@ -246,10 +246,19 @@ pub fn launch_installer(installer: &Path) -> Result<(), String> {
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     {
         use std::os::unix::fs::PermissionsExt;
-        let target = std::env::var("APPIMAGE")
-            .map_err(|_| "Automatic update only works for the AppImage build.".to_string())?;
-        fs::copy(installer, &target).map_err(|e| e.to_string())?;
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        let target = PathBuf::from(
+            std::env::var("APPIMAGE")
+                .map_err(|_| "Automatic update only works for the AppImage build.".to_string())?,
+        );
+        // The running AppImage cannot be written to ("Text file busy"), but it can be replaced:
+        // copy next to it, then rename over it.
+        let staged = target.with_extension("update");
+        fs::copy(installer, &staged).map_err(|e| e.to_string())?;
+        fs::set_permissions(&staged, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        fs::rename(&staged, &target).map_err(|e| {
+            let _ = fs::remove_file(&staged);
+            e.to_string()
+        })?;
         std::process::Command::new(&target)
             .spawn()
             .map_err(|e| format!("Cannot restart: {e}"))?;
