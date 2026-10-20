@@ -1,0 +1,126 @@
+//! Running the in-app MCP server and reporting its status.
+
+use super::git::identity_of;
+use super::preferences::update_settings;
+use crate::logs::append_app_log;
+use crate::{mcp, settings, AppState};
+use serde::Serialize;
+use std::sync::Arc;
+use tauri::{Emitter, Manager};
+
+pub(crate) const REPO_CHANGED_EVENT: &str = "repo-changed";
+
+#[derive(Default)]
+pub struct McpRuntime {
+    server: Option<mcp::McpServer>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct McpStatus {
+    enabled: bool,
+    port: u16,
+    running: bool,
+    error: Option<String>,
+    url: String,
+    exe_path: String,
+}
+
+pub(crate) struct AppHost {
+    app: tauri::AppHandle,
+}
+
+impl mcp::McpHost for AppHost {
+    fn projects(&self) -> Vec<project_service::Project> {
+        self.app
+            .state::<AppState>()
+            .project_service
+            .lock()
+            .map(|service| service.list_projects())
+            .unwrap_or_default()
+    }
+
+    fn identity(&self) -> Option<git_service::Identity> {
+        identity_of(&self.app.state::<AppState>())
+    }
+
+    fn on_saved(&self, project: &project_service::Project, message: &str) {
+        append_app_log(
+            &project.id,
+            &project.name,
+            "save.create",
+            &format!("{}: {} (MCP)", project.name, message),
+        );
+        let _ = self
+            .app
+            .emit(REPO_CHANGED_EVENT, serde_json::json!({ "project_id": project.id }));
+    }
+}
+
+pub(crate) fn restart_mcp(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let (enabled, port) = state
+        .settings
+        .lock()
+        .map(|s| (s.mcp_enabled, s.mcp_port))
+        .unwrap_or((false, settings::DEFAULT_MCP_PORT));
+    let Ok(mut runtime) = state.mcp.lock() else {
+        return;
+    };
+    if let Some(server) = runtime.server.take() {
+        server.stop();
+    }
+    runtime.error = None;
+    if !enabled {
+        return;
+    }
+    let host: Arc<dyn mcp::McpHost> = Arc::new(AppHost { app: app.clone() });
+    match mcp::McpServer::start(port, host) {
+        Ok(server) => runtime.server = Some(server),
+        Err(error) => runtime.error = Some(error),
+    }
+}
+
+pub(crate) fn mcp_status(state: &AppState) -> McpStatus {
+    let (enabled, port) = state
+        .settings
+        .lock()
+        .map(|s| (s.mcp_enabled, s.mcp_port))
+        .unwrap_or((false, settings::DEFAULT_MCP_PORT));
+    let (running, error) = state
+        .mcp
+        .lock()
+        .map(|runtime| (runtime.server.is_some(), runtime.error.clone()))
+        .unwrap_or((false, None));
+    McpStatus {
+        enabled,
+        port,
+        running,
+        error,
+        url: mcp::endpoint(port),
+        exe_path: mcp::exe_path(),
+    }
+}
+
+#[tauri::command]
+pub(crate) fn get_mcp_status(state: tauri::State<AppState>) -> McpStatus {
+    mcp_status(&state)
+}
+
+#[tauri::command]
+pub(crate) async fn set_mcp_config(app: tauri::AppHandle, enabled: bool, port: u16) -> Result<McpStatus, String> {
+    if port < 1024 {
+        return Err("INVALID_PORT".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        update_settings(&state, |settings| {
+            settings.mcp_enabled = enabled;
+            settings.mcp_port = port;
+        })?;
+        restart_mcp(&app);
+        Ok(mcp_status(&state))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
