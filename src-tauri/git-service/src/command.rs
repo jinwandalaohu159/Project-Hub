@@ -3,11 +3,12 @@
 use crate::GitService;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 impl GitService {
     pub(crate) fn git_dir(&self, repo_path: &str) -> Result<PathBuf, String> {
@@ -40,6 +41,9 @@ impl GitService {
         // Repositories copied from another machine or user would otherwise fail with
         // "detected dubious ownership"; non-ASCII paths should stay readable.
         command.args(["-c", "safe.directory=*", "-c", "core.quotepath=false"]);
+        // Git's automatic clean-up can repack a large history for many seconds after a save; it runs
+        // in the background instead (see `housekeeping.rs`).
+        command.args(["-c", "gc.auto=0", "-c", "maintenance.auto=false"]);
         if let Some(identity) = &self.identity {
             if !identity.name.trim().is_empty() {
                 command.arg("-c").arg(format!("user.name={}", identity.name.trim()));
@@ -58,6 +62,43 @@ impl GitService {
             command.env(key, value);
         }
         command
+    }
+
+    /// Like [`Self::run_git_with_env`], feeding `input` to git's standard input.
+    pub(crate) fn run_git_with_input(
+        &self,
+        repo_path: &str,
+        args: &[&str],
+        envs: &[(&str, &str)],
+        input: &str,
+    ) -> Result<String, String> {
+        if !Path::new(repo_path).is_dir() {
+            return Err(format!("Project folder not found: {}", repo_path));
+        }
+        let mut child = self
+            .base_command(repo_path, args, envs)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to execute git: {}", e))?;
+        // Written from another thread: git may fill its output pipe before it has read all input.
+        let writer = child.stdin.take().map(|mut stdin| {
+            let input = input.as_bytes().to_vec();
+            std::thread::spawn(move || stdin.write_all(&input))
+        });
+        let output = child
+            .wait_with_output()
+            .map_err(|e| format!("Failed to execute git: {}", e))?;
+        let written = writer
+            .map(|handle| handle.join().unwrap_or(Ok(())))
+            .unwrap_or(Ok(()));
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git {} failed: {}", args.join(" "), stderr.trim()));
+        }
+        written.map_err(|e| format!("Failed to write to git: {}", e))?;
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
     pub(crate) fn run_git(&self, repo_path: &str, args: &[&str]) -> Result<String, String> {

@@ -1,7 +1,7 @@
 /* Shared look of the settings drawer and its sections (global, scoped by .settings-overlay). */
 .settings-overlay {
   position: fixed;
-  inset: 0;
+  inset: var(--title-bar-height) 0 0 0;
   z-index: 100;
   background: var(--color-modal-overlay, rgba(10, 8, 6, 0.7));
   backdrop-filter: blur(4px);

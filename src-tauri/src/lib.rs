@@ -156,6 +156,8 @@ pub fn run() {
             commands::git::stash_to_draft,
             commands::git::discard_draft,
             commands::git::get_repo_state,
+            commands::git::edit_record,
+            commands::git::delete_record,
             commands::git::git_init,
             commands::git::is_git_repo,
             commands::projects::ensure_project_versioned,

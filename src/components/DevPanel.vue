@@ -96,7 +96,7 @@ function testI18nState() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-end justify-end" style="background: rgba(10, 8, 6, 0.5)" @click.self="$emit('close')">
+  <div class="fixed inset-x-0 bottom-0 top-[var(--title-bar-height)] z-50 flex items-end justify-end" style="background: rgba(10, 8, 6, 0.5)" @click.self="$emit('close')">
     <div class="w-96 max-h-[66vh] bg-surface-overlay border border-border rounded-lg overflow-y-auto">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
         <span class="text-base font-semibold text-ink">调试面板</span>

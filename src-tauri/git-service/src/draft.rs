@@ -233,8 +233,7 @@ impl GitService {
             self.archive_commit(repo_path, &branch, snapshot)?;
         }
 
-        self.preserve_current_branch_log(repo_path, &branch)?;
-        self.preserve_commit_for_branch(repo_path, &branch, &base)?;
+        self.preserve_head_and(repo_path, &branch, &base)?;
         self.run_git(repo_path, &["reset", "--hard", &base])?;
         self.run_git(repo_path, &["clean", "-fd"])?;
         self.run_git(repo_path, &["restore", "--source", &draft, "--worktree", "--", "."])?;

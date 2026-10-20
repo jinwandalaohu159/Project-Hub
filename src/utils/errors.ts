@@ -9,6 +9,8 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   INVALID_EMAIL: "errorInvalidEmail",
   INVALID_PORT: "errorInvalidPort",
   UPDATE_RATE_LIMITED: "errorUpdateRateLimited",
+  RECORD_UNDELETABLE: "errorRecordUndeletable",
+  RECORD_NOT_IN_VERSION: "errorRecordNotInVersion",
 };
 
 const PATTERN_KEYS: Array<[RegExp, TranslationKey]> = [

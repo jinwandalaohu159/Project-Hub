@@ -8,6 +8,9 @@ export default {
   addProject: 'Add Project',
   settings: 'Settings',
   debugPanel: 'Debug panel',
+  minimizeWindow: 'Minimize',
+  maximizeWindow: 'Maximize',
+  restoreWindow: 'Restore down',
   autoSaveBeforeSwitch: 'Save before switching to {name}',
 
   // CollapsiblePanel.vue
@@ -209,6 +212,21 @@ export default {
 
   // History
   showDetails: 'Show details',
+  editRecord: 'Edit title and details',
+  deleteRecord: 'Delete this record',
+  editRecordTitle: 'Edit save record',
+  editRecordSubtitle: 'Only the title and details change; the saved files stay the same.',
+  saveChanges: 'Save changes',
+  recordEdited: 'Record updated',
+  deleteRecordTitle: 'Delete this save record?',
+  deleteRecordBody: '"{message}" will be removed from the list. Later records keep exactly their files.',
+  deleteCurrentRecordNote: 'This is the record you are on. Your files stay as they are; its changes will show as unsaved changes.',
+  deleteUploadedNote: 'If it was already uploaded, the next upload will ask to overwrite the cloud copy.',
+  recordDeleted: 'Record deleted',
+  recordDeletedKept: 'Its changes are kept as unsaved changes.',
+  errorRecordUndeletable: 'The first record cannot be deleted while it is in use.',
+  errorRecordNotInVersion: 'This record does not belong to the current version.',
+  savingLargeHint: 'Saving many or large files for the first time can take a while…',
   restoreCommitTitle: 'Switch to this record?',
   restoreCommitBody: '"{message}"\nSaved {time}\n\nProject files will change to this record. Later records stay in the list.',
   restoreKeepsDraftNote: 'Your unsaved changes are kept as "Unsaved changes" at the top of the list, so you can switch back to them.',

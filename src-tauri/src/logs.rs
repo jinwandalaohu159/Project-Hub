@@ -301,7 +301,7 @@ pub(crate) async fn read_app_logs(project_id: String, limit: usize) -> Result<Ve
             .filter_map(|line| serde_json::from_str::<AppLogEntry>(line).ok())
             .take(limit.clamp(1, 1000))
             .collect::<Vec<_>>();
-        entries.sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms));
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp_ms));
         Ok(entries)
     })
     .await

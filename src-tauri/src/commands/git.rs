@@ -43,7 +43,7 @@ pub(crate) async fn switch_branch(repo_path: String, branch_name: String) -> Res
 
 #[tauri::command]
 pub(crate) async fn get_git_status(repo_path: String) -> Result<Vec<git_service::FileDiff>, String> {
-    run_git_task(move |svc| svc.get_status(&repo_path)).await
+    run_git_task(move |svc| svc.settled(&repo_path, |svc| svc.get_status(&repo_path))).await
 }
 
 #[tauri::command]
@@ -51,12 +51,12 @@ pub(crate) async fn get_git_status_summary(
     repo_path: String,
     limit: usize,
 ) -> Result<git_service::StatusSummary, String> {
-    run_git_task(move |svc| svc.get_status_summary(&repo_path, limit)).await
+    run_git_task(move |svc| svc.settled(&repo_path, |svc| svc.get_status_summary(&repo_path, limit))).await
 }
 
 #[tauri::command]
 pub(crate) async fn has_unsaved_changes(repo_path: String) -> Result<bool, String> {
-    run_git_task(move |svc| svc.has_unsaved_changes(&repo_path)).await
+    run_git_task(move |svc| svc.settled(&repo_path, |svc| svc.has_unsaved_changes(&repo_path))).await
 }
 
 #[tauri::command]
@@ -162,6 +162,25 @@ pub(crate) async fn restore_commit(
 }
 
 #[tauri::command]
+pub(crate) async fn edit_record(
+    state: tauri::State<'_, AppState>,
+    repo_path: String,
+    commit_hash: String,
+    message: String,
+) -> Result<(), String> {
+    run_git_as(identity_of(&state), move |svc| svc.edit_record_message(&repo_path, &commit_hash, &message)).await
+}
+
+#[tauri::command]
+pub(crate) async fn delete_record(
+    state: tauri::State<'_, AppState>,
+    repo_path: String,
+    commit_hash: String,
+) -> Result<git_service::DeleteRecordOutcome, String> {
+    run_git_as(identity_of(&state), move |svc| svc.delete_record(&repo_path, &commit_hash)).await
+}
+
+#[tauri::command]
 pub(crate) async fn get_draft(repo_path: String) -> Result<Option<git_service::DraftInfo>, String> {
     run_git_task(move |svc| svc.get_draft(&repo_path)).await
 }
@@ -186,7 +205,7 @@ pub(crate) async fn discard_draft(repo_path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub(crate) async fn get_repo_state(repo_path: String) -> Result<git_service::RepoState, String> {
-    run_git_task(move |svc| svc.get_repo_state(&repo_path)).await
+    run_git_task(move |svc| svc.settled(&repo_path, |svc| svc.get_repo_state(&repo_path))).await
 }
 
 #[tauri::command]

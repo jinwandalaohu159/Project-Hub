@@ -18,13 +18,12 @@ import ToastHost from './components/ToastHost.vue'
 import ConfirmHost from './components/ConfirmHost.vue'
 import GithubLoginDialog from './components/GithubLoginDialog.vue'
 import UpdateBanner from './components/UpdateBanner.vue'
+import TitleBar from './components/TitleBar.vue'
 import { useUpdater } from './composables/useUpdater'
-import { Plus, Settings, Columns2, Rows2, Bug } from 'lucide-vue-next'
+import { Plus, Columns2, Rows2 } from 'lucide-vue-next'
 import Tooltip from './components/Tooltip.vue'
 import { isTauri } from './utils/env'
 
-// Served from public/; bound dynamically so the bundler does not try to import it.
-const logoUrl = '/app-icon.png'
 const DEFAULT_LEFT_WIDTH = 300
 const DEFAULT_MIDDLE_WIDTH = 280
 const DEFAULT_VERTICAL_SPLIT = 66.3
@@ -144,25 +143,16 @@ onUnmounted(() => {
 
 <template>
   <div class="flex h-full w-full flex-col">
+  <!-- Custom title bar: global actions sit next to the window buttons, whatever panels are collapsed. -->
+  <TitleBar
+    :dev-panel-open="showDevPanel"
+    :settings-open="showSettings"
+    :update-available="updater.available.value"
+    @toggle-dev-panel="showDevPanel = !showDevPanel"
+    @open-settings="showSettings = true"
+  />
   <UpdateBanner />
   <div class="flex min-h-0 w-full flex-1">
-    <!-- Always-visible app rail: global actions stay put whatever panels are collapsed. -->
-    <nav class="app-rail">
-      <img :src="logoUrl" alt="Project Hub" class="app-rail-logo" draggable="false" />
-      <div class="flex-1" />
-      <Tooltip :text="t('debugPanel')">
-        <button class="app-rail-btn" :class="{ active: showDevPanel }" @click="showDevPanel = !showDevPanel">
-          <Bug :size="18" />
-        </button>
-      </Tooltip>
-      <Tooltip :text="t('settings')">
-        <button class="app-rail-btn" :class="{ active: showSettings }" @click="showSettings = true">
-          <Settings :size="18" />
-          <span v-if="updater.available.value" class="app-rail-dot" />
-        </button>
-      </Tooltip>
-    </nav>
-
     <!-- Left panels area -->
     <template v-if="leftLayout === 'horizontal'">
       <!-- Left Panel: ProjectPanel -->
@@ -285,57 +275,3 @@ onUnmounted(() => {
   </div>
   </div>
 </template>
-
-<style scoped>
-.app-rail {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 44px;
-  padding: 10px 0 10px;
-  border-right: 1px solid var(--color-border);
-  background: var(--color-canvas);
-}
-
-.app-rail-logo {
-  width: 24px;
-  height: 24px;
-  margin-bottom: 6px;
-  border-radius: 6px;
-  user-select: none;
-}
-
-.app-rail-btn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  color: var(--color-muted);
-}
-
-.app-rail-btn:hover {
-  background: var(--color-surface-raised);
-  color: var(--color-ink);
-}
-
-.app-rail-dot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 7px;
-  height: 7px;
-  border: 1.5px solid var(--color-canvas);
-  border-radius: 50%;
-  background: var(--color-primary);
-}
-
-.app-rail-btn.active {
-  background: var(--color-surface-raised);
-  color: var(--color-primary);
-}
-</style>

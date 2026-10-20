@@ -8,6 +8,7 @@ import { useConfirm } from "../composables/useConfirm";
 import { useToast } from "../composables/useToast";
 import { errorText } from "../utils/errors";
 import { ref, watch } from "vue";
+import { useDismiss } from "../composables/useDismiss";
 import { GitMerge, Plus, Trash2 } from "lucide-vue-next";
 
 const { selectedProject, loadBranches, branches } = useProjectStore();
@@ -25,6 +26,7 @@ const switchToNew = ref(true);
 const deleteTarget = ref("");
 const mergeSource = ref("");
 const busy = ref(false);
+const root = ref<HTMLElement | null>(null);
 
 function currentBranchName() {
   return branches.value.find((branch) => branch.is_current)?.name ?? t('current');
@@ -40,6 +42,20 @@ function togglePanel(panel: "create" | "delete" | "merge") {
   showDelete.value = next.delete;
   showMerge.value = next.merge;
 }
+
+function closePanels() {
+  showCreate.value = false;
+  showDelete.value = false;
+  showMerge.value = false;
+}
+
+// An open panel folds away when clicking anywhere else, like a dropdown.
+useDismiss({
+  isOpen: () => showCreate.value || showDelete.value || showMerge.value,
+  isInside: (target) => root.value?.contains(target) ?? false,
+  canDismiss: () => !busy.value,
+  onDismiss: closePanels,
+});
 
 async function createBranch() {
   if (!selectedProject.value || !newBranchName.value.trim() || busy.value) return;
@@ -149,7 +165,7 @@ watch(versionSwitchToken, () => {
 </script>
 
 <template>
-  <div>
+  <div ref="root">
     <div class="flex items-center justify-center gap-2 pt-0.5 pb-0 flex-nowrap overflow-x-auto">
       <button
         @click="togglePanel('create')"

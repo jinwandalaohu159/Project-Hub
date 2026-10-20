@@ -137,6 +137,8 @@
   --dur-fast: 140ms;
   --dur: 220ms;
   --dur-slow: 340ms;
+  /* The app's own title bar; full-window layers start below it so the window buttons stay usable. */
+  --title-bar-height: 36px;
 }
 
 /* Smooth colour changes everywhere; utilities still win because this sits in the base layer. */
@@ -218,6 +220,52 @@ body.ph-resizing * {
 
 /* ----- Shared controls ----- */
 @layer components {
+/* Right-click menus (ContextMenu.vue). */
+.context-menu {
+  position: fixed;
+  z-index: 10000;
+  padding: 6px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface-overlay);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.34);
+}
+
+.menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  color: var(--color-ink);
+  font-size: 14px;
+  text-align: left;
+  transition: background-color var(--dur-fast) ease;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--color-surface-raised);
+}
+
+.menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.menu-item-danger {
+  color: var(--color-error);
+}
+
+.menu-item-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--color-border-subtle);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -333,6 +381,11 @@ body.ph-resizing * {
 
 .spin {
   animation: ph-spin 0.9s linear infinite;
+}
+
+/* One full turn per click (restarted by re-keying the icon). */
+.spin-once {
+  animation: ph-spin 650ms var(--ease-out);
 }
 
 @keyframes ph-spin {

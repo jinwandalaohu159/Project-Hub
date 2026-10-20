@@ -58,6 +58,11 @@ export interface VersioningOutcome {
   initial_version: boolean;
 }
 
+export interface DeleteRecordOutcome {
+  /** The current record was deleted: files stayed, its changes are now unsaved changes. */
+  kept_as_unsaved: boolean;
+}
+
 export interface RestoreOutcome {
   draft_saved: boolean;
 }

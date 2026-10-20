@@ -8,6 +8,9 @@ export default {
   addProject: '添加项目',
   settings: '设置',
   debugPanel: '调试面板',
+  minimizeWindow: '最小化',
+  maximizeWindow: '最大化',
+  restoreWindow: '向下还原',
   autoSaveBeforeSwitch: '切换到 {name} 前保存',
 
   // CollapsiblePanel.vue
@@ -209,6 +212,21 @@ export default {
 
   // History
   showDetails: '查看详情',
+  editRecord: '编辑标题和详情',
+  deleteRecord: '删除这条记录',
+  editRecordTitle: '编辑保存记录',
+  editRecordSubtitle: '只修改标题和详情，保存的文件内容不变',
+  saveChanges: '保存修改',
+  recordEdited: '记录已更新',
+  deleteRecordTitle: '删除这条保存记录？',
+  deleteRecordBody: '「{message}」会从列表中移除，之后的记录内容完全不受影响。',
+  deleteCurrentRecordNote: '这是当前所在的记录。删除后你的文件保持不变，它的改动会变成未保存的更改。',
+  deleteUploadedNote: '如果它已经上传过，下次上传时会提示覆盖云端。',
+  recordDeleted: '记录已删除',
+  recordDeletedKept: '它的改动已保留为未保存的更改',
+  errorRecordUndeletable: '正在使用的第一条记录无法删除',
+  errorRecordNotInVersion: '这条记录不属于当前版本',
+  savingLargeHint: '首次保存大量或较大的文件需要一些时间，请稍候…',
   restoreCommitTitle: '切换到这条保存记录？',
   restoreCommitBody: '「{message}」\n保存于 {time}\n\n项目文件会变成这条记录的内容，之后的记录仍会保留在列表中。',
   restoreKeepsDraftNote: '当前未保存的更改会保留为列表顶部的「未保存的更改」，随时可以切回来。',

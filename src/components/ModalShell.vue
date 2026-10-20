@@ -96,7 +96,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .modal-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--title-bar-height) 0 0 0;
   z-index: 10000;
   display: flex;
   align-items: center;

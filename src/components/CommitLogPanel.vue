@@ -8,10 +8,12 @@ import { useAppLog } from "../composables/useAppLog";
 import { useConfirm } from "../composables/useConfirm";
 import { useToast } from "../composables/useToast";
 import { errorText } from "../utils/errors";
-import type { CommitEntry, DraftInfo, RestoreOutcome } from "../types";
+import type { CommitEntry, DeleteRecordOutcome, DraftInfo, RestoreOutcome } from "../types";
 import { watch, ref } from "vue";
-import { ChevronRight, FilePen, Loader2, RotateCcw } from "lucide-vue-next";
+import { ChevronRight, FilePen, Loader2, Pencil, RotateCcw, Trash2 } from "lucide-vue-next";
 import { formatRelativeTime } from "../utils/time";
+import RecordEditDialog from "./RecordEditDialog.vue";
+import ContextMenu from "./ContextMenu.vue";
 
 const HISTORY_LIMIT = 100;
 const DRAFT_KEY = "__draft__";
@@ -27,6 +29,9 @@ const commits = ref<CommitEntry[]>([]);
 const draft = ref<DraftInfo | null>(null);
 const restoringKey = ref<string | null>(null);
 const expanded = ref(new Set<string>());
+const menu = ref<{ x: number; y: number; commit: CommitEntry } | null>(null);
+const editing = ref<CommitEntry | null>(null);
+const editBusy = ref(false);
 
 async function loadCommits() {
   const project = selectedProject.value;
@@ -45,6 +50,12 @@ async function loadCommits() {
 }
 
 watch([selectedProject, commitLogRefreshToken], loadCommits, { immediate: true });
+
+// A menu or edit opened for one project must not act on the next one.
+watch(selectedProject, () => {
+  menu.value = null;
+  if (!editBusy.value) editing.value = null;
+});
 
 function formatTime(iso: string | null): string {
   return formatRelativeTime(iso, t);
@@ -69,11 +80,15 @@ function toggleExpanded(hash: string) {
 async function afterRestore(outcome: RestoreOutcome, message: string) {
   const project = selectedProject.value;
   if (!project) return;
-  await loadFileTree(project, { showLoading: false });
-  clearSelection();
-  await loadBranches();
-  notifyVersionContextChanged();
   toast.success(message, outcome.draft_saved ? { detail: t('draftKeptHint') } : undefined);
+  clearSelection();
+  await Promise.all([loadFileTree(project, { showLoading: false }), loadBranches()]);
+  notifyVersionContextChanged();
+}
+
+/** Shows the switch right away; the full refresh follows in the background. */
+function markCurrent(hash: string) {
+  commits.value = commits.value.map((commit) => ({ ...commit, is_current: commit.hash === hash }));
 }
 
 /** Note shown in the confirmation describing what happens to unsaved work. */
@@ -100,8 +115,10 @@ async function restoreCommit(commit: CommitEntry) {
       repoPath: project.path,
       commitHash: commit.hash,
     });
+    markCurrent(commit.hash);
+    restoringKey.value = null;
+    void logOperation(project, "save.restore", `${project.name}: ${shortHash(commit.hash)} ${commit.message}`);
     await afterRestore(outcome, t('restoredCommit', { message: commit.message }));
-    await logOperation(project, "save.restore", `${project.name}: ${shortHash(commit.hash)} ${commit.message}`);
   } catch (error) {
     toast.error(errorText(error, t, "restoreCommitFailed"));
   } finally {
@@ -126,10 +143,91 @@ async function restoreDraft() {
   restoringKey.value = DRAFT_KEY;
   try {
     const outcome = await invoke<RestoreOutcome>("restore_draft", { repoPath: project.path });
+    restoringKey.value = null;
+    void logOperation(project, "save.restore-draft", `${project.name}: ${current.files} files`);
     await afterRestore(outcome, t('restoredDraft'));
-    await logOperation(project, "save.restore-draft", `${project.name}: ${current.files} files`);
   } catch (error) {
     toast.error(errorText(error, t, "restoreCommitFailed"));
+  } finally {
+    restoringKey.value = null;
+  }
+}
+
+function openMenu(event: MouseEvent, commit: CommitEntry) {
+  if (restoringKey.value) return;
+  menu.value = { x: event.clientX, y: event.clientY, commit };
+}
+
+function closeMenu() {
+  menu.value = null;
+}
+
+/**
+ * The first record cannot go while it is the one in use: the version would be left empty. Only
+ * knowable when the whole history fits in the list; otherwise the backend has the final say.
+ */
+function canDelete(commit: CommitEntry) {
+  if (commits.value.length <= 1) return false;
+  if (commits.value.length >= HISTORY_LIMIT) return true;
+  const oldest = commits.value[commits.value.length - 1];
+  return !(commit.is_current && oldest?.hash === commit.hash);
+}
+
+function startEdit(commit: CommitEntry) {
+  closeMenu();
+  editing.value = commit;
+}
+
+async function afterHistoryChange() {
+  await Promise.all([loadCommits(), loadBranches()]);
+  notifyVersionContextChanged();
+}
+
+async function saveEdit(input: { title: string; description: string }) {
+  const project = selectedProject.value;
+  const commit = editing.value;
+  if (!project || !commit || editBusy.value) return;
+  const message = input.description ? `${input.title}\n\n${input.description}` : input.title;
+  editBusy.value = true;
+  try {
+    await invoke("edit_record", { repoPath: project.path, commitHash: commit.hash, message });
+    editing.value = null;
+    toast.success(t('recordEdited'));
+    void logOperation(project, "save.edit", `${project.name}: ${commit.message} -> ${input.title}`);
+    await afterHistoryChange();
+  } catch (error) {
+    toast.error(errorText(error, t));
+  } finally {
+    editBusy.value = false;
+  }
+}
+
+async function deleteRecord(commit: CommitEntry) {
+  closeMenu();
+  const project = selectedProject.value;
+  if (!project || restoringKey.value || !canDelete(commit)) return;
+  const notes = [commit.is_current ? t('deleteCurrentRecordNote') : "", t('deleteUploadedNote')].filter(Boolean);
+  const ok = await confirm({
+    title: t('deleteRecordTitle'),
+    message: t('deleteRecordBody', { message: commit.message }),
+    note: notes.join("\n"),
+    confirmText: t('delete'),
+    danger: true,
+  });
+  if (!ok) return;
+  restoringKey.value = commit.hash;
+  try {
+    const outcome = await invoke<DeleteRecordOutcome>("delete_record", {
+      repoPath: project.path,
+      commitHash: commit.hash,
+    });
+    commits.value = commits.value.filter((entry) => entry.hash !== commit.hash);
+    restoringKey.value = null;
+    toast.success(t('recordDeleted'), outcome.kept_as_unsaved ? { detail: t('recordDeletedKept') } : undefined);
+    void logOperation(project, "save.delete", `${project.name}: ${shortHash(commit.hash)} ${commit.message}`);
+    await afterHistoryChange();
+  } catch (error) {
+    toast.error(errorText(error, t));
   } finally {
     restoringKey.value = null;
   }
@@ -201,6 +299,7 @@ async function discardDraft() {
             commit.is_current ? 'bg-success/10 border-l-2 border-l-success cursor-default' : 'hover:bg-surface-raised cursor-pointer'
           ]"
           @click="restoreCommit(commit)"
+          @contextmenu.prevent="openMenu($event, commit)"
         >
           <div class="flex items-start gap-2">
             <button
@@ -239,6 +338,34 @@ async function discardDraft() {
         </div>
       </TransitionGroup>
     </div>
+
+    <ContextMenu :at="menu" :min-width="200" @close="closeMenu">
+      <template v-if="menu">
+        <button class="menu-item" @click="startEdit(menu.commit)">
+          <Pencil :size="14" class="text-muted" />
+          {{ t('editRecord') }}
+        </button>
+        <div class="menu-separator" />
+        <button
+          class="menu-item menu-item-danger"
+          :disabled="!canDelete(menu.commit)"
+          :title="canDelete(menu.commit) ? undefined : t('errorRecordUndeletable')"
+          @click="deleteRecord(menu.commit)"
+        >
+          <Trash2 :size="14" />
+          {{ t('deleteRecord') }}
+        </button>
+      </template>
+    </ContextMenu>
+
+    <RecordEditDialog
+      :open="editing !== null"
+      :busy="editBusy"
+      :title="editing?.message ?? ''"
+      :description="editing?.body ?? ''"
+      @save="saveEdit"
+      @close="editing = null"
+    />
   </div>
 </template>
 

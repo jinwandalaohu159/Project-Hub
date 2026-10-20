@@ -26,11 +26,21 @@ pub(crate) fn ensure_main_window(app: &tauri::AppHandle, visible: bool) -> tauri
         return Ok(window);
     }
 
-    WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::default())
+    let builder = WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::default())
         .title("Project Hub")
         .inner_size(1200.0, 800.0)
-        .visible(visible)
-        .build()
+        .min_inner_size(720.0, 480.0)
+        .visible(visible);
+
+    // The app draws its own title bar (with settings and debug next to the window buttons).
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.decorations(false);
+
+    builder.build()
 }
 
 pub(crate) fn show_main_window(app: &tauri::AppHandle) {

@@ -106,6 +106,14 @@ impl GitService {
     }
 
     pub fn save_version(&self, repo_path: &str, message: &str) -> Result<(), String> {
+        let result = self.save_version_locked(repo_path, message);
+        if result.is_ok() {
+            self.schedule_housekeeping(repo_path);
+        }
+        result
+    }
+
+    fn save_version_locked(&self, repo_path: &str, message: &str) -> Result<(), String> {
         lock_repo!(repo_path);
         self.add_all(repo_path)?;
         if self.has_staged_changes(repo_path)? {
@@ -133,21 +141,16 @@ impl GitService {
         format!("{}{}", self.checkpoint_ref_prefix(branch_name), commit_hash)
     }
 
-    pub(crate) fn preserve_commit_for_branch(
-        &self,
-        repo_path: &str,
-        branch_name: &str,
-        commit_hash: &str,
-    ) -> Result<(), String> {
-        let checkpoint_ref = self.checkpoint_ref(branch_name, commit_hash);
-        self.run_git(repo_path, &["update-ref", &checkpoint_ref, commit_hash])?;
-        Ok(())
-    }
-
-    pub(crate) fn preserve_current_branch_log(&self, repo_path: &str, branch_name: &str) -> Result<(), String> {
-        // Only the tip needs a ref: every ancestor stays reachable from it.
+    /// Keeps both the current record and `target` listed, in one git call.
+    pub(crate) fn preserve_head_and(&self, repo_path: &str, branch_name: &str, target: &str) -> Result<(), String> {
         let head = self.run_git(repo_path, &["rev-parse", "HEAD"])?;
-        self.preserve_commit_for_branch(repo_path, branch_name, head.trim())
+        let head = head.trim();
+        let mut input = format!("update {} {}\n", self.checkpoint_ref(branch_name, head), head);
+        if target != head {
+            input.push_str(&format!("update {} {}\n", self.checkpoint_ref(branch_name, target), target));
+        }
+        self.run_git_with_input(repo_path, &["update-ref", "--stdin"], &[], &input)?;
+        Ok(())
     }
 
     pub(crate) fn checkpoint_refs_for_branch(
@@ -224,16 +227,19 @@ impl GitService {
 
         // Ignored local files (e.g. .env.local) that the target record tracks would be overwritten.
         let at_risk = self.ignored_paths_tracked_in(repo_path, &target_commit)?;
-        let draft_saved = if self.has_unsaved_changes(repo_path)? || !at_risk.is_empty() {
+        let dirty = self.has_unsaved_changes(repo_path)?;
+        let draft_saved = if dirty || !at_risk.is_empty() {
             self.save_draft_unlocked(repo_path, &at_risk)?
         } else {
             false
         };
 
-        self.preserve_current_branch_log(repo_path, &current_branch)?;
-        self.preserve_commit_for_branch(repo_path, &current_branch, &target_commit)?;
+        self.preserve_head_and(repo_path, &current_branch, &target_commit)?;
         self.run_git(repo_path, &["reset", "--hard", &target_commit])?;
-        self.run_git(repo_path, &["clean", "-fd"])?;
+        // A clean working tree has no untracked files for `clean` to remove.
+        if dirty {
+            self.run_git(repo_path, &["clean", "-fd"])?;
+        }
         Ok(RestoreOutcome { draft_saved })
     }
 

@@ -152,7 +152,7 @@ fn call_tool(host: &dyn McpHost, name: &str, args: &Value) -> Result<String, Str
         "get_status" => {
             let project = resolve_project(host, str_arg(args, "project"))?;
             let branch = git.get_current_branch(&project.path)?;
-            let status = git.get_status_summary(&project.path, 200)?;
+            let status = git.settled(&project.path, |git| git.get_status_summary(&project.path, 200))?;
             let draft = git.get_draft(&project.path)?;
             let history = git.get_log(&project.path, 5)?;
             serde_json::to_string_pretty(&json!({
@@ -233,9 +233,7 @@ pub fn handle_message(host: &dyn McpHost, message: &Value) -> Option<Value> {
     let method = message.get("method").and_then(Value::as_str).unwrap_or_default();
     let params = message.get("params").cloned().unwrap_or(Value::Null);
 
-    let Some(id) = id.filter(|id| !id.is_null()) else {
-        return None;
-    };
+    let id = id.filter(|id| !id.is_null())?;
 
     let result = match method {
         "initialize" => {
@@ -279,7 +277,7 @@ fn handle_payload(host: &dyn McpHost, payload: &Value) -> Option<Value> {
     match payload {
         Value::Array(batch) => {
             let responses: Vec<Value> = batch.iter().filter_map(|m| handle_message(host, m)).collect();
-            (!responses.is_empty()).then(|| Value::Array(responses))
+            (!responses.is_empty()).then_some(Value::Array(responses))
         }
         single => handle_message(host, single),
     }

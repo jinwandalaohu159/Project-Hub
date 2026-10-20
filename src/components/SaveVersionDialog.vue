@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ChevronRight, Loader2 } from "lucide-vue-next";
 import ModalShell from "./ModalShell.vue";
 import FileStatusChip from "./FileStatusChip.vue";
@@ -8,6 +8,7 @@ import type { FileDiff } from "../types";
 import { changeDisplayPath } from "../utils/path";
 
 const TITLE_LIMIT = 100;
+const SLOW_SAVE_MS = 2500;
 
 const props = defineProps<{
   open: boolean;
@@ -40,6 +41,22 @@ watch(
 );
 
 const remaining = computed(() => TITLE_LIMIT - title.value.length);
+
+// The first save of a big project stores every file once; say so instead of looking stuck.
+const slowSave = ref(false);
+let slowTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => props.saving,
+  (saving) => {
+    if (slowTimer) clearTimeout(slowTimer);
+    slowTimer = null;
+    slowSave.value = false;
+    if (saving) slowTimer = setTimeout(() => (slowSave.value = true), SLOW_SAVE_MS);
+  }
+);
+onBeforeUnmount(() => {
+  if (slowTimer) clearTimeout(slowTimer);
+});
 
 function submit() {
   if (props.saving) return;
@@ -118,7 +135,10 @@ function onTitleEnter(event: KeyboardEvent) {
       </div>
     </div>
     <template #footer>
-      <span class="mr-auto self-center text-[11px] text-text-muted">{{ t('saveShortcutHint') }}</span>
+      <Transition name="fade" mode="out-in">
+        <span v-if="slowSave" key="slow" class="mr-auto self-center text-[11px] text-warning">{{ t('savingLargeHint') }}</span>
+        <span v-else key="hint" class="mr-auto self-center text-[11px] text-text-muted">{{ t('saveShortcutHint') }}</span>
+      </Transition>
       <button class="btn btn-ghost" :disabled="saving" @click="emit('close')">{{ t('cancel') }}</button>
       <button class="btn btn-primary min-w-24" :disabled="saving" @click="submit">
         <Loader2 v-if="saving" :size="14" class="spin" />

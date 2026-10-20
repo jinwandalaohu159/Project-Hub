@@ -331,7 +331,8 @@ function onBranchListResize(dy: number) {
               <div class="text-xs text-muted truncate mt-1">{{ selectedProject?.path }}</div>
             </div>
             <div class="flex flex-col items-end gap-1 shrink-0">
-              <CloudSyncButton />
+              <!-- Nudged right so it lines up with the panel edge. -->
+              <div class="translate-x-1.5"><CloudSyncButton /></div>
               <span class="text-[11px] text-muted">{{ branches.length }} {{ t('versionsUnit') }}</span>
             </div>
           </div>

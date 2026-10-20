@@ -14,6 +14,7 @@ import { watch, ref, onBeforeUnmount } from "vue";
 import FileTreeNode from "./FileTreeNode.vue";
 import Tooltip from "./Tooltip.vue";
 import ModalShell from "./ModalShell.vue";
+import ContextMenu from "./ContextMenu.vue";
 import { FilePlus, FolderPlus, RefreshCw } from "lucide-vue-next";
 
 const {
@@ -137,6 +138,25 @@ async function refreshVisibleTree(force = false) {
     await refreshFileTree(expandedDirs.value);
   } finally {
     isRefreshing = false;
+  }
+}
+
+const REFRESH_SPIN_MS = 650;
+const refreshSpins = ref(0);
+const manualRefreshing = ref(false);
+
+/** The refresh button: spins once per click and also re-reads the unsaved changes. */
+async function manualRefresh() {
+  refreshSpins.value += 1;
+  if (manualRefreshing.value) return;
+  manualRefreshing.value = true;
+  const started = Date.now();
+  try {
+    await refreshVisibleTree(true);
+    notifyWorkingTreeChanged();
+  } finally {
+    const remaining = Math.max(0, REFRESH_SPIN_MS - (Date.now() - started));
+    setTimeout(() => (manualRefreshing.value = false), remaining);
   }
 }
 
@@ -394,9 +414,9 @@ function closeContextMenu() {
           <button
             class="w-7 h-7 flex items-center justify-center rounded-md text-muted hover:text-ink hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             :disabled="!selectedProject"
-            @click.stop="refreshVisibleTree(true)"
+            @click.stop="manualRefresh"
           >
-            <RefreshCw :size="14" />
+            <RefreshCw :key="refreshSpins" :size="14" :class="{ 'spin-once': refreshSpins > 0 }" />
           </button>
         </Tooltip>
       </div>
@@ -446,39 +466,16 @@ function closeContextMenu() {
         @click-suppressed="releaseSuppressedNodeClick(0)"
       />
     </div>
-    <div
-      v-if="contextMenu"
-      class="fixed z-[10000] min-w-44 rounded-md border border-border bg-surface-overlay py-1.5 shadow-[0_12px_30px_rgb(0_0_0/0.34)]"
-      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
-      @click.stop
-    >
-      <button
-        class="w-full px-4 py-2 text-left text-sm text-ink hover:bg-surface-raised transition-colors"
-        @click="createNewFile(contextMenu.node)"
-      >
-        {{ t('newFile') }}
-      </button>
-      <button
-        class="w-full px-4 py-2 text-left text-sm text-ink hover:bg-surface-raised transition-colors"
-        @click="createNewFolder(contextMenu.node)"
-      >
-        {{ t('newFolder') }}
-      </button>
-      <div class="my-1 h-px bg-border-subtle" />
-      <button
-        class="w-full px-4 py-2 text-left text-sm text-ink hover:bg-surface-raised transition-colors"
-        @click="renameNode(contextMenu.node)"
-      >
-        {{ t('rename') }}
-      </button>
-      <div class="my-1 h-px bg-border-subtle" />
-      <button
-        class="w-full px-4 py-2 text-left text-sm text-error hover:bg-error/10 transition-colors"
-        @click="requestDeleteNode(contextMenu.node)"
-      >
-        {{ t('delete') }}
-      </button>
-    </div>
+    <ContextMenu :at="contextMenu" @close="closeContextMenu">
+      <template v-if="contextMenu">
+        <button class="menu-item" @click="createNewFile(contextMenu.node)">{{ t('newFile') }}</button>
+        <button class="menu-item" @click="createNewFolder(contextMenu.node)">{{ t('newFolder') }}</button>
+        <div class="menu-separator" />
+        <button class="menu-item" @click="renameNode(contextMenu.node)">{{ t('rename') }}</button>
+        <div class="menu-separator" />
+        <button class="menu-item menu-item-danger" @click="requestDeleteNode(contextMenu.node)">{{ t('delete') }}</button>
+      </template>
+    </ContextMenu>
     <div
       v-if="isDragging && draggingNode"
       class="fixed z-[10002] pointer-events-none rounded-md border border-border bg-surface-overlay px-2 py-1 text-xs text-ink shadow-[0_10px_24px_rgb(0_0_0/0.34)]"

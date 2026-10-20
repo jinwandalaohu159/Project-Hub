@@ -17,11 +17,14 @@ mod bundle;
 mod command;
 mod draft;
 mod history;
+mod housekeeping;
 mod refs;
 mod remote;
+mod rewrite;
 mod status;
 
 pub use remote::base64_encode;
+pub use rewrite::{RECORD_NOT_IN_VERSION, RECORD_UNDELETABLE};
 
 /// Error prefix returned by [`GitService::push`] when the remote refuses a non-fast-forward update.
 pub const PUSH_REJECTED: &str = "PUSH_REJECTED";
@@ -108,6 +111,14 @@ pub struct RestoreOutcome {
     pub draft_saved: bool,
 }
 
+/// Result of deleting a save record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteRecordOutcome {
+    /// The deleted record was the current one: the files stay as they are and its changes now show
+    /// as unsaved changes.
+    pub kept_as_unsaved: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncState {
     pub remote_url: Option<String>,
@@ -136,6 +147,13 @@ impl GitService {
     pub fn with_identity(identity: Option<Identity>) -> Self {
         let identity = identity.filter(|id| !id.name.trim().is_empty() || !id.email.trim().is_empty());
         Self { identity }
+    }
+
+    /// Runs a read once no save, restore or switch is half-way through, so status checks never
+    /// report the in-between state of the working tree as unsaved changes.
+    pub fn settled<T>(&self, repo_path: &str, read: impl FnOnce(&Self) -> T) -> T {
+        lock_repo!(repo_path);
+        read(self)
     }
 
     pub fn is_git_repo(&self, path: &str) -> bool {
