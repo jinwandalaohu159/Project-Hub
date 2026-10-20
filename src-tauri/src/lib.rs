@@ -1,5 +1,6 @@
 mod autostart;
 mod commands;
+mod credential_manager;
 mod github;
 mod logs;
 mod mcp;

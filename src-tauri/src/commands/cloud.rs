@@ -2,7 +2,7 @@
 
 use super::git::{identity_of, run_git_task};
 use super::preferences::update_settings;
-use crate::{github, settings, AppState};
+use crate::{credential_manager, github, settings, AppState};
 use git_service::GitService;
 use tauri::Manager;
 
@@ -24,7 +24,7 @@ pub(crate) fn finish_login(app: &tauri::AppHandle, token: &str, via_browser: boo
 #[tauri::command]
 pub(crate) async fn github_login_browser(app: tauri::AppHandle) -> Result<settings::GithubAccount, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let token = github::browser_login()?;
+        let token = credential_manager::browser_login()?;
         finish_login(&app, &token, true)
     })
     .await
@@ -53,7 +53,7 @@ pub(crate) async fn github_logout(app: tauri::AppHandle) -> Result<(), String> {
         github::delete_token();
         // A pasted token never touched the shared git credential store; leave other tools signed in.
         if let Some((account, true)) = previous {
-            github::forget_browser_login(&account.login);
+            credential_manager::forget_browser_login(&account.login);
         }
         Ok(())
     })

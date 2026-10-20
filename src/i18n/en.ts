@@ -163,7 +163,9 @@ export default {
 
   // Errors
   errorGithubNotSignedIn: 'Sign in to GitHub first.',
-  errorGcmNotAvailable: 'Browser sign-in needs Git Credential Manager (bundled with Git for Windows). Sign in with a token instead.',
+  errorGcmNotAvailableWindows: 'Browser sign-in needs Git Credential Manager, which comes with Git for Windows. Install it and try again, or sign in with a token.',
+  errorGcmNotAvailableMacos: 'Browser sign-in needs Git Credential Manager. Install it with "brew install --cask git-credential-manager" and try again, or sign in with a token.',
+  errorGcmNotAvailableLinux: 'Browser sign-in needs Git Credential Manager (see https://aka.ms/gcm). Install it and try again, or sign in with a token.',
   errorTokenEmpty: 'Paste a token first.',
   errorInvalidEmail: 'That email address does not look valid.',
   errorInvalidPort: 'Use a port between 1024 and 65535.',

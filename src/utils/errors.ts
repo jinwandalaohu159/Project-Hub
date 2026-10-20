@@ -4,7 +4,9 @@ type Translate = (key: TranslationKey, params?: Record<string, string | number>)
 
 const CODE_KEYS: Record<string, TranslationKey> = {
   GITHUB_NOT_SIGNED_IN: "errorGithubNotSignedIn",
-  GCM_NOT_AVAILABLE: "errorGcmNotAvailable",
+  GCM_NOT_AVAILABLE_WINDOWS: "errorGcmNotAvailableWindows",
+  GCM_NOT_AVAILABLE_MACOS: "errorGcmNotAvailableMacos",
+  GCM_NOT_AVAILABLE_LINUX: "errorGcmNotAvailableLinux",
   GITHUB_TOKEN_EMPTY: "errorTokenEmpty",
   INVALID_EMAIL: "errorInvalidEmail",
   INVALID_PORT: "errorInvalidPort",

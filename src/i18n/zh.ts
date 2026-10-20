@@ -163,7 +163,9 @@ export default {
 
   // Errors
   errorGithubNotSignedIn: '请先登录 GitHub',
-  errorGcmNotAvailable: '浏览器登录需要 Git Credential Manager（随 Git for Windows 安装），请改用访问令牌登录',
+  errorGcmNotAvailableWindows: '浏览器登录需要 Git Credential Manager（随 Git for Windows 安装），安装后重试，或改用访问令牌登录',
+  errorGcmNotAvailableMacos: '浏览器登录需要 Git Credential Manager，在终端运行 brew install --cask git-credential-manager 安装后重试，或改用访问令牌登录',
+  errorGcmNotAvailableLinux: '浏览器登录需要 Git Credential Manager（安装方法见 https://aka.ms/gcm），安装后重试，或改用访问令牌登录',
   errorTokenEmpty: '请先粘贴令牌',
   errorInvalidEmail: '邮箱格式不正确',
   errorInvalidPort: '端口需在 1024 到 65535 之间',

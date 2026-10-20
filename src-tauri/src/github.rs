@@ -1,18 +1,10 @@
 use crate::settings::{app_data_dir, GithubAccount};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    io::{Read, Write},
-    path::PathBuf,
-    process::{Command, Stdio},
-    time::{Duration, Instant},
-};
+use std::{fs, path::PathBuf, time::Duration};
 
 const API: &str = "https://api.github.com";
 const USER_AGENT: &str = "Project-Hub";
 const TOKEN_FILE_NAME: &str = "github-token.bin";
-const BROWSER_LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
-pub const GCM_NOT_AVAILABLE: &str = "GCM_NOT_AVAILABLE";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoInfo {
@@ -113,127 +105,6 @@ pub fn list_repos(token: &str) -> Result<Vec<RepoInfo>, String> {
         .map_err(api_error)?
         .into_json::<Vec<RepoInfo>>()
         .map_err(|e| e.to_string())
-}
-
-fn git_command() -> Command {
-    let mut command = Command::new("git");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
-    }
-    // Always talk to Git Credential Manager, whatever helper the user configured.
-    command
-        .args(["-c", "credential.helper=", "-c", "credential.helper=manager"])
-        .env("GIT_TERMINAL_PROMPT", "0");
-    command
-}
-
-pub fn credential_manager_available() -> bool {
-    let mut command = Command::new("git");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
-    }
-    command
-        .args(["credential-manager", "--version"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
-fn run_credential(action: &str, input: &str, timeout: Duration) -> Result<String, String> {
-    let mut child = git_command()
-        .args(["credential", action])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start git: {e}"))?;
-    child
-        .stdin
-        .take()
-        .ok_or("Failed to talk to git")?
-        .write_all(input.as_bytes())
-        .map_err(|e| e.to_string())?;
-
-    let started = Instant::now();
-    loop {
-        if child.try_wait().map_err(|e| e.to_string())?.is_some() {
-            break;
-        }
-        if started.elapsed() > timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err("GitHub sign-in timed out.".to_string());
-        }
-        std::thread::sleep(Duration::from_millis(150));
-    }
-
-    let mut stdout = String::new();
-    let mut stderr = String::new();
-    if let Some(mut out) = child.stdout.take() {
-        let _ = out.read_to_string(&mut stdout);
-    }
-    if let Some(mut err) = child.stderr.take() {
-        let _ = err.read_to_string(&mut stderr);
-    }
-    let status = child.wait().map_err(|e| e.to_string())?;
-    if !status.success() {
-        let message = stderr.trim();
-        return Err(if message.is_empty() {
-            "GitHub sign-in was cancelled.".to_string()
-        } else {
-            message.to_string()
-        });
-    }
-    Ok(stdout)
-}
-
-/// Opens the Git Credential Manager sign-in (browser OAuth) and returns the GitHub token it issues.
-/// An already stored credential is returned without any prompt.
-pub fn browser_login() -> Result<String, String> {
-    if !credential_manager_available() {
-        return Err(GCM_NOT_AVAILABLE.to_string());
-    }
-    let output = run_credential(
-        "fill",
-        "protocol=https\nhost=github.com\n\n",
-        BROWSER_LOGIN_TIMEOUT,
-    )?;
-    let mut username = String::new();
-    let mut password = String::new();
-    for line in output.lines() {
-        if let Some(value) = line.strip_prefix("username=") {
-            username = value.to_string();
-        } else if let Some(value) = line.strip_prefix("password=") {
-            password = value.to_string();
-        }
-    }
-    if password.is_empty() {
-        return Err("GitHub sign-in was cancelled.".to_string());
-    }
-    let _ = run_credential(
-        "approve",
-        &format!("protocol=https\nhost=github.com\nusername={username}\npassword={password}\n\n"),
-        Duration::from_secs(20),
-    );
-    Ok(password)
-}
-
-/// Removes the credential Git Credential Manager keeps, so the next browser sign-in can pick another account.
-pub fn forget_browser_login(login: &str) {
-    if !credential_manager_available() {
-        return;
-    }
-    let _ = run_credential(
-        "reject",
-        &format!("protocol=https\nhost=github.com\nusername={login}\n\n"),
-        Duration::from_secs(20),
-    );
 }
 
 pub fn is_github_https(url: &str) -> bool {
