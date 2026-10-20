@@ -1,0 +1,127 @@
+name: Release
+
+# Builds the Windows, macOS (Apple Silicon + Intel) and Linux installers for a version
+# tag and publishes them to one GitHub release, named so that the in-app updater
+# (src-tauri/src/update.rs) can pick the right file for each computer.
+#
+# Started automatically by "npm run release", which pushes the tag.
+# To rebuild a tag by hand: Actions -> Release -> Run workflow.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing version tag to rebuild, e.g. v0.3.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  # The release starts as a draft so nobody downloads a half-finished set of installers.
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Create or reuse the draft release
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; its files will be replaced."
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft
+          else
+            notes="$(git tag -l --format='%(contents)' "$TAG")"
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft \
+              --title "Project Hub $TAG" --notes "${notes:-Project Hub $TAG}"
+          fi
+
+  build:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+            dir: nsis
+            glob: "*-setup.exe"
+            suffix: x64-setup.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundle: dmg
+            dir: dmg
+            glob: "*.dmg"
+            suffix: aarch64.dmg
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bundle: dmg
+            dir: dmg
+            glob: "*.dmg"
+            suffix: x64.dmg
+          # 22.04 on purpose: an AppImage built on a newer glibc will not start on older distros.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundle: appimage
+            dir: appimage
+            glob: "*.AppImage"
+            suffix: amd64.AppImage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Install the Linux build dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libxdo-dev libssl-dev patchelf file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - run: npm ci
+
+      - name: Build the installer
+        run: npx tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
+
+      - name: Rename the installer to the name the updater looks for
+        shell: bash
+        run: |
+          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          src="$(ls src-tauri/target/${{ matrix.target }}/release/bundle/${{ matrix.dir }}/${{ matrix.glob }} | head -1)"
+          mkdir -p release
+          # GitHub turns spaces in file names into dots, so publish a space-free name.
+          cp "$src" "release/Project-Hub_${version}_${{ matrix.suffix }}"
+          ls -l release
+
+      - name: Upload it to the draft release
+        shell: bash
+        run: gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      # All four installers are in place, so the release can go live.
+      - run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
