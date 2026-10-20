@@ -27,7 +27,10 @@ const files = {
   pkg: path.join(root, "package.json"),
   conf: path.join(root, "src-tauri", "tauri.conf.json"),
   cargo: path.join(root, "src-tauri", "Cargo.toml"),
+  cargoLock: path.join(root, "src-tauri", "Cargo.lock"),
 };
+// What a version bump changes, relative to the repository root.
+const VERSION_FILES = Object.values(files).map((file) => path.relative(root, file).split(path.sep).join("/"));
 
 function fail(message) {
   console.error(`\n✖ ${message}\n`);
@@ -98,6 +101,12 @@ function setVersion(version) {
   const updated = cargo.replace(/(\[package\][^[]*?\nversion\s*=\s*")[^"]+(")/, `$1${version}$2`);
   if (updated === cargo && !cargo.includes(`version = "${version}"`)) fail("Could not update the version in Cargo.toml");
   fs.writeFileSync(files.cargo, updated);
+
+  // Otherwise the lock file keeps the old version until the next local cargo run rewrites it.
+  const lock = fs.readFileSync(files.cargoLock, "utf8");
+  const lockUpdated = lock.replace(/(\[\[package\]\]\r?\nname = "project-hub"\r?\nversion = ")[^"]+(")/, `$1${version}$2`);
+  if (lockUpdated === lock && !lock.includes(`name = "project-hub"\nversion = "${version}"`)) fail("Could not update the version in Cargo.lock");
+  fs.writeFileSync(files.cargoLock, lockUpdated);
 }
 
 function bundleSpec() {
@@ -107,47 +116,37 @@ function bundleSpec() {
   return { bundle: "appimage", dir: "appimage", match: (f) => f.endsWith(".AppImage"), suffix: `${arch === "x64" ? "amd64" : arch}.AppImage` };
 }
 
-const options = parseArgs(process.argv.slice(2));
-
-step("Checking GitHub");
-if (!capture("gh", ["--version"])) fail("GitHub CLI (gh) is not installed: https://cli.github.com/");
-const login = capture("gh", ["api", "user", "--jq", ".login"]);
-if (!login) fail("GitHub CLI is not signed in. Run: gh auth login");
-if (login.toLowerCase() !== OWNER.toLowerCase()) fail(`GitHub CLI is signed in as ${login}, but releases go to ${REPO}. Run: gh auth switch`);
-const repoInfo = capture("gh", ["repo", "view", REPO, "--json", "visibility,isEmpty"]);
-if (!repoInfo) fail(`Repository ${REPO} does not exist yet. Add this folder in Project Hub and upload it as a public repository named "${REPO.split("/")[1]}" first.`);
-const repo = JSON.parse(repoInfo);
-if (repo.isEmpty) fail(`Repository ${REPO} is empty. Upload the source with Project Hub's "Upload" button first.`);
-if (repo.visibility !== "PUBLIC") fail(`Repository ${REPO} is ${repo.visibility.toLowerCase()}. Other computers can only download updates from a public repository.`);
-
-const current = JSON.parse(fs.readFileSync(files.conf, "utf8")).version;
-const version = nextVersion(current, options.bump);
-// With --local, re-running with the current version retries a release whose upload failed.
-if (!newerThan(version, current) && version !== current) fail(`${version} is not newer than the current ${current}.`);
-const tag = `v${version}`;
-const rebuild = `gh workflow run ${WORKFLOW} --repo ${REPO} -f tag=${tag}`;
-if (capture("gh", ["release", "view", tag, "--repo", REPO, "--json", "tagName"])) {
-  fail(`Release ${tag} already exists on GitHub.\n  To build its installers again: ${rebuild}`);
+function checkGithub() {
+  if (!capture("gh", ["--version"])) fail("GitHub CLI (gh) is not installed: https://cli.github.com/");
+  const login = capture("gh", ["api", "user", "--jq", ".login"]);
+  if (!login) fail("GitHub CLI is not signed in. Run: gh auth login");
+  if (login.toLowerCase() !== OWNER.toLowerCase()) fail(`GitHub CLI is signed in as ${login}, but releases go to ${REPO}. Run: gh auth switch`);
+  const repoInfo = capture("gh", ["repo", "view", REPO, "--json", "visibility,isEmpty"]);
+  if (!repoInfo) fail(`Repository ${REPO} does not exist yet. Add this folder in Project Hub and upload it as a public repository named "${REPO.split("/")[1]}" first.`);
+  const repo = JSON.parse(repoInfo);
+  if (repo.isEmpty) fail(`Repository ${REPO} is empty. Upload the source with Project Hub's "Upload" button first.`);
+  if (repo.visibility !== "PUBLIC") fail(`Repository ${REPO} is ${repo.visibility.toLowerCase()}. Other computers can only download updates from a public repository.`);
 }
 
-// Building every platform means handing the tag to GitHub Actions: macOS and Linux installers
-// cannot be produced on Windows, and vice versa.
-if (!options.local) {
+/** The branch the release commit goes on; fails unless the tree is clean and the tag is free. */
+function checkCanTag(release) {
   const branch = capture("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
   if (!branch || branch === "HEAD") fail("Not on a branch. Check out main first.");
   if (capture("git", ["status", "--porcelain"])) fail("There are uncommitted changes. Commit or stash them first, so the release commit only contains the version bump.");
   // A pushed tag without a release means the build failed before it got going: rebuild, don't re-tag.
+  const { tag, version, current } = release;
   if (version === current || capture("git", ["tag", "-l", tag]) || capture("git", ["ls-remote", "--tags", "origin", tag])) {
-    fail(`${tag} is already tagged. To build its installers again: ${rebuild}`);
+    fail(`${tag} is already tagged. To build its installers again: ${release.rebuild}`);
   }
+  return branch;
+}
 
-  step(`Version ${current} → ${version}`);
-  setVersion(version);
-
-  const notes = options.notes.trim() || `Project Hub ${tag}`;
+/** Commits the version bump, pushes the tag and follows the GitHub Actions build of every installer. */
+function releaseWithCi(release, branch) {
+  const { tag, version, current, notes, rebuild } = release;
   step(`Pushing ${tag} to ${REPO}`);
   const committed =
-    run("git", ["add", "package.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml"]) &&
+    run("git", ["add", ...VERSION_FILES]) &&
     run("git", ["commit", "-m", `Project Hub ${version}`]) &&
     run("git", ["tag", "-a", tag, "-m", notes]);
   if (!committed) {
@@ -160,51 +159,83 @@ if (!options.local) {
 
   step("GitHub Actions is building the Windows, macOS and Linux installers (about 10-15 minutes)");
   console.log(`  https://github.com/${REPO}/actions/workflows/${WORKFLOW}`);
-  let runId = null;
-  for (let i = 0; i < 20 && !runId; i++) {
-    sleep(3000);
-    const list = capture("gh", ["run", "list", "--repo", REPO, "--workflow", WORKFLOW, "--limit", "10", "--json", "databaseId,headBranch,event"]);
-    runId = JSON.parse(list || "[]").find((item) => item.headBranch === tag)?.databaseId ?? null;
-  }
+  const runId = findBuild(tag);
   if (!runId) {
     console.log("\n  The build has not shown up yet; follow it on the page above.\n");
-    process.exit(0);
+    return;
   }
   if (!run("gh", ["run", "watch", String(runId), "--repo", REPO, "--exit-status"])) {
     fail(`The build failed. See https://github.com/${REPO}/actions/runs/${runId} , then rerun it with: ${rebuild}`);
   }
   console.log(`\n✔ Released ${tag} for Windows, macOS and Linux. Installed copies will offer the update on their next check.\n`);
-  process.exit(0);
 }
 
+/** The Actions run started by pushing `tag`; it can take a few seconds to appear. */
+function findBuild(tag) {
+  for (let i = 0; i < 20; i++) {
+    sleep(3000);
+    const list = capture("gh", ["run", "list", "--repo", REPO, "--workflow", WORKFLOW, "--limit", "10", "--json", "databaseId,headBranch"]);
+    const runId = JSON.parse(list || "[]").find((item) => item.headBranch === tag)?.databaseId;
+    if (runId) return runId;
+  }
+  return null;
+}
+
+/** Builds only this computer's installer and publishes it as the whole release. */
+function releaseLocally(release) {
+  const { tag, version, current, notes } = release;
+  const spec = bundleSpec();
+  step(`Building the ${spec.bundle} installer for this computer only (this takes a few minutes)`);
+  if (!run("npx", ["tauri", "build", "--bundles", spec.bundle])) {
+    setVersion(current);
+    fail(`Build failed; version restored to ${current}.`);
+  }
+
+  const bundleDir = path.join(root, "src-tauri", "target", "release", "bundle", spec.dir);
+  const built = fs.readdirSync(bundleDir).filter(spec.match).filter((f) => f.includes(version));
+  if (built.length === 0) fail(`No installer for ${version} found in ${bundleDir}`);
+
+  // GitHub turns spaces into dots in file names; use a stable name the app can recognise.
+  const outDir = path.join(root, "release");
+  fs.mkdirSync(outDir, { recursive: true });
+  const assetPath = path.join(outDir, `Project-Hub_${version}_${spec.suffix}`);
+  fs.copyFileSync(path.join(bundleDir, built[0]), assetPath);
+
+  const notesFile = path.join(os.tmpdir(), `project-hub-notes-${version}.md`);
+  fs.writeFileSync(notesFile, notes);
+  step(`Publishing ${tag} to https://github.com/${REPO}/releases`);
+  const published = run("gh", ["release", "create", tag, assetPath, "--repo", REPO, "--title", `Project Hub ${tag}`, "--notes-file", notesFile, "--latest"]);
+  fs.rmSync(notesFile, { force: true });
+  if (!published) fail(`Upload failed. The installer is at ${assetPath}; rerun "npm run release -- ${version} --local" to retry.`);
+
+  console.log(`\n✔ Released ${tag} (${process.platform} only). Installed copies will offer the update on their next check.\n`);
+}
+
+const options = parseArgs(process.argv.slice(2));
+
+step("Checking GitHub");
+checkGithub();
+
+const current = JSON.parse(fs.readFileSync(files.conf, "utf8")).version;
+const version = nextVersion(current, options.bump);
+// With --local, re-running with the current version retries a release whose upload failed.
+if (!newerThan(version, current) && version !== current) fail(`${version} is not newer than the current ${current}.`);
+const tag = `v${version}`;
+const release = {
+  current,
+  version,
+  tag,
+  notes: options.notes.trim() || `Project Hub ${tag}`,
+  rebuild: `gh workflow run ${WORKFLOW} --repo ${REPO} -f tag=${tag}`,
+};
+if (capture("gh", ["release", "view", tag, "--repo", REPO, "--json", "tagName"])) {
+  fail(`Release ${tag} already exists on GitHub.\n  To build its installers again: ${release.rebuild}`);
+}
+
+// Every platform's installer needs that platform to build it, so the default hands the tag to
+// GitHub Actions; --local builds just this computer's.
+const branch = options.local ? null : checkCanTag(release);
 step(`Version ${current} → ${version}`);
 setVersion(version);
-
-const spec = bundleSpec();
-step(`Building the ${spec.bundle} installer for this computer only (this takes a few minutes)`);
-if (!run("npx", ["tauri", "build", "--bundles", spec.bundle])) {
-  setVersion(current);
-  fail(`Build failed; version restored to ${current}.`);
-}
-
-const bundleDir = path.join(root, "src-tauri", "target", "release", "bundle", spec.dir);
-const built = fs.readdirSync(bundleDir).filter(spec.match).filter((f) => f.includes(version));
-if (built.length === 0) fail(`No installer for ${version} found in ${bundleDir}`);
-
-// GitHub turns spaces into dots in file names; use a stable name the app can recognise.
-const outDir = path.join(root, "release");
-fs.mkdirSync(outDir, { recursive: true });
-const assetName = `Project-Hub_${version}_${spec.suffix}`;
-const assetPath = path.join(outDir, assetName);
-fs.copyFileSync(path.join(bundleDir, built[0]), assetPath);
-
-const notes = options.notes.trim() || `Project Hub ${tag}`;
-const notesFile = path.join(os.tmpdir(), `project-hub-notes-${version}.md`);
-fs.writeFileSync(notesFile, notes);
-
-step(`Publishing ${tag} to https://github.com/${REPO}/releases`);
-const published = run("gh", ["release", "create", tag, assetPath, "--repo", REPO, "--title", `Project Hub ${tag}`, "--notes-file", notesFile, "--latest"]);
-fs.rmSync(notesFile, { force: true });
-if (!published) fail(`Upload failed. The installer is at ${assetPath}; rerun "npm run release -- ${version} --local" to retry.`);
-
-console.log(`\n✔ Released ${tag} (${process.platform} only). Installed copies will offer the update on their next check.\n`);
+if (options.local) releaseLocally(release);
+else releaseWithCi(release, branch);
