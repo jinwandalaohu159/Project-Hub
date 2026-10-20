@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Bug, Copy, Minus, Settings, Square, X } from 'lucide-vue-next'
 import Tooltip from './Tooltip.vue'
 import { useI18n } from '../composables/useI18n'
-import { isTauri } from '../utils/env'
+import { useWindowState } from '../composables/useWindowState'
+import { isMac, isTauri } from '../utils/env'
 
 defineProps<{
   devPanelOpen: boolean
@@ -21,28 +21,10 @@ const emit = defineEmits<{
 const logoUrl = '/app-icon.png'
 
 const { t } = useI18n()
-const inTauri = isTauri()
-// macOS keeps its own traffic-light buttons on the left of the bar.
-const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || navigator.userAgent)
-const showWindowControls = inTauri && !isMac
-const maximized = ref(false)
-let unlistenResize: (() => void) | null = null
-let syncTimer: ReturnType<typeof setTimeout> | null = null
-let disposed = false
-
-async function syncMaximized() {
-  try {
-    maximized.value = await getCurrentWindow().isMaximized()
-  } catch {
-    // Window state is cosmetic here.
-  }
-}
-
-/** Resizing fires many events; only the state after it settles matters for the icon. */
-function scheduleSync() {
-  if (syncTimer) clearTimeout(syncTimer)
-  syncTimer = setTimeout(syncMaximized, 120)
-}
+// macOS keeps its own traffic-light buttons on the left of the bar; full screen hides them.
+const mac = isMac()
+const showWindowControls = isTauri() && !mac
+const { maximized, fullscreen } = useWindowState()
 
 function minimize() {
   getCurrentWindow().minimize()
@@ -56,27 +38,11 @@ function toggleMaximize() {
 function closeWindow() {
   getCurrentWindow().close()
 }
-
-onMounted(async () => {
-  if (!showWindowControls) return
-  await syncMaximized()
-  const unlisten = await getCurrentWindow().onResized(scheduleSync)
-  // Unmounted while the listener was being registered.
-  if (disposed) unlisten()
-  else unlistenResize = unlisten
-})
-
-onUnmounted(() => {
-  disposed = true
-  if (syncTimer) clearTimeout(syncTimer)
-  unlistenResize?.()
-  unlistenResize = null
-})
 </script>
 
 <template>
-  <header class="title-bar" :class="{ 'title-bar-mac': isMac }" data-tauri-drag-region>
-    <img v-if="!isMac" :src="logoUrl" alt="" class="title-bar-logo" draggable="false" data-tauri-drag-region />
+  <header class="title-bar" :class="{ 'title-bar-mac': mac && !fullscreen }" data-tauri-drag-region>
+    <img :src="logoUrl" alt="" class="title-bar-logo" draggable="false" data-tauri-drag-region />
     <span class="title-bar-name" data-tauri-drag-region>Project Hub</span>
     <div class="flex-1 self-stretch" data-tauri-drag-region />
 
@@ -119,6 +85,7 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--color-border);
   background: var(--color-canvas);
   user-select: none;
+  transition: padding-left 0.3s ease;
 }
 
 /* Room for the macOS traffic lights drawn over the bar. */
