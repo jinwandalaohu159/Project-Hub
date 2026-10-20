@@ -133,6 +133,8 @@ impl GitService {
 }
 
 pub(crate) fn hidden_command(program: &str) -> Command {
+    // Only Windows changes the command here.
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = Command::new(program);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);

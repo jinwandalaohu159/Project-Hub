@@ -1,5 +1,6 @@
 //! Main window and tray icon.
 
+#[cfg(target_os = "windows")]
 use crate::trace_startup;
 #[cfg(target_os = "windows")]
 use std::time::Duration;
