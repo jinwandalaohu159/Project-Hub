@@ -29,7 +29,6 @@ pub(crate) async fn check_for_update(app: tauri::AppHandle) -> Result<update::Up
 }
 
 /// Downloads the new installer, starts it and quits; the installer reopens the updated app.
-/// Returns "opened" when the user still has to finish the install by hand (macOS disk image).
 #[tauri::command]
 pub(crate) async fn install_update(
     app: tauri::AppHandle,
@@ -49,9 +48,6 @@ pub(crate) async fn install_update(
     .await
     .map_err(|e| e.to_string())??;
     update::launch_installer(&installer)?;
-    if cfg!(target_os = "macos") {
-        return Ok("opened".to_string());
-    }
     app.exit(0);
     Ok("restarting".to_string())
 }

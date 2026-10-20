@@ -377,7 +377,6 @@ export default {
   updateReleasesPage: '查看所有版本',
   updateFailed: '更新失败',
   updateCheckFailed: '检查更新失败',
-  updateOpenedInstaller: '已打开新版本，把 Project Hub 拖到「应用程序」即可完成更新。',
   errorUpdateRateLimited: 'GitHub 暂时限制了访问次数，请稍后再试。',
   initialVersionCreated: '{name} 已启用版本管理但还没有任何记录，已为它创建第一个版本。',
   loadVersionsFailed: '无法读取 {name} 的版本',

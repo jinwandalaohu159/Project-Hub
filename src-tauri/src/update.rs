@@ -214,6 +214,49 @@ pub fn download(
     Ok(dest)
 }
 
+/// The app bundle this copy runs from, such as /Applications/Project Hub.app.
+#[cfg(target_os = "macos")]
+fn running_app_bundle() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    // <name>.app/Contents/MacOS/<binary>
+    let bundle = exe.parent()?.parent()?.parent()?;
+    (bundle.extension()? == "app").then(|| bundle.to_path_buf())
+}
+
+/// Replaces the app bundle with the one in the downloaded disk image and opens it again.
+/// Arguments: the app's process id, the disk image, the bundle to replace. Runs once the app has
+/// quit; when the bundle cannot be replaced (no write access, for example) it keeps the old one and
+/// opens the disk image instead. Output goes to $TMPDIR/project-hub-update.log.
+#[cfg(target_os = "macos")]
+const MACOS_REPLACE_SCRIPT: &str = r#"
+pid="$1"; dmg="$2"; app="$3"
+exec >>"${TMPDIR:-/tmp}/project-hub-update.log" 2>&1
+echo "$(date) updating $app from $dmg"
+while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
+
+staged="$app.update"; old="$app.old"; mnt="$(mktemp -d)"
+replace() {
+  hdiutil attach -nobrowse -noautoopen -readonly -mountpoint "$mnt" "$dmg" || return 1
+  new="$(ls -d "$mnt"/*.app 2>/dev/null | head -n 1)"
+  rm -rf "$staged" "$old"
+  [ -n "$new" ] && ditto "$new" "$staged" || return 1
+  mv "$app" "$old" || return 1
+  if ! mv "$staged" "$app"; then mv "$old" "$app"; return 1; fi
+  rm -rf "$old"
+}
+
+if replace; then
+  hdiutil detach -quiet "$mnt"
+  open "$app"
+else
+  echo "could not replace the app; opening the disk image"
+  rm -rf "$staged"
+  hdiutil detach -quiet "$mnt" 2>/dev/null
+  open "$dmg"
+fi
+rmdir "$mnt" 2>/dev/null
+"#;
+
 /// Starts the installer and arranges for the updated app to open again. The caller exits right after.
 pub fn launch_installer(installer: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
@@ -236,11 +279,29 @@ pub fn launch_installer(installer: &Path) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        // A disk image needs the user to drag the app into Applications.
-        std::process::Command::new("open")
+        use std::os::unix::process::CommandExt;
+        // Run from the build folder (or anywhere but an app bundle): leave the disk image to the user.
+        let Some(bundle) = running_app_bundle() else {
+            std::process::Command::new("open")
+                .arg(installer)
+                .spawn()
+                .map_err(|e| format!("Cannot open the update: {e}"))?;
+            return Ok(());
+        };
+        std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(MACOS_REPLACE_SCRIPT)
+            .arg("project-hub-update")
+            .arg(std::process::id().to_string())
             .arg(installer)
+            .arg(&bundle)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            // Its own process group, so it outlives the app it is about to replace.
+            .process_group(0)
             .spawn()
-            .map_err(|e| format!("Cannot open the update: {e}"))?;
+            .map_err(|e| format!("Cannot start the update: {e}"))?;
         Ok(())
     }
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]

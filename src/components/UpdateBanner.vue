@@ -19,8 +19,7 @@ function formatSize(bytes: number) {
 async function update() {
   showNotes.value = false;
   try {
-    const result = await install();
-    if (result === "opened") toast.info(t("updateOpenedInstaller"));
+    await install();
   } catch (error) {
     toast.error(errorText(error, t), { detail: t("updateFailed") });
   }

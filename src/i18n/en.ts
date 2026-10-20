@@ -377,7 +377,6 @@ export default {
   updateReleasesPage: 'All releases',
   updateFailed: 'Update failed',
   updateCheckFailed: 'Could not check for updates',
-  updateOpenedInstaller: 'The new version was opened. Drag Project Hub into Applications to finish.',
   errorUpdateRateLimited: 'GitHub is limiting requests right now. Try again in a while.',
   initialVersionCreated: '{name} had version history but no records yet; created its first version.',
   loadVersionsFailed: 'Could not read the versions of {name}',
