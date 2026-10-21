@@ -1,6 +1,6 @@
 [package]
 name = "project-hub"
-version = "0.3.4"
+version = "0.3.5"
 description = "Project Hub"
 authors = ["you"]
 edition = "2021"
