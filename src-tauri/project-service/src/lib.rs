@@ -82,7 +82,7 @@ impl ProjectService {
             .projects
             .iter()
             .position(|p| p.id == id)
-            .ok_or_else(|| format!("Project not found: {}", id))?;
+            .ok_or_else(|| format!("PROJECT_NOT_FOUND:{id}"))?;
         self.projects.remove(index);
         self.save_projects()?;
         Ok(())
@@ -131,7 +131,7 @@ impl ProjectService {
             .projects
             .iter_mut()
             .find(|p| p.id == id)
-            .ok_or_else(|| format!("Project not found: {}", id))?;
+            .ok_or_else(|| format!("PROJECT_NOT_FOUND:{id}"))?;
         project.path = new_path.to_string();
         project.name = folder_name(dir);
         project.is_git_repo = dir.join(".git").exists();

@@ -47,7 +47,7 @@ pub(crate) async fn add_project(app: tauri::AppHandle, path: String) -> Result<A
 pub(crate) async fn ensure_project_versioned(app: tauri::AppHandle, id: String) -> Result<VersioningOutcome, String> {
     let lookup = id.clone();
     let project = with_projects(app.clone(), move |service| {
-        service.get_project(&lookup).ok_or_else(|| format!("Project not found: {}", lookup))
+        service.get_project(&lookup).ok_or_else(|| format!("PROJECT_NOT_FOUND:{lookup}"))
     })
     .await?;
     let outcome = ensure_versioned(&app, project.path).await?;

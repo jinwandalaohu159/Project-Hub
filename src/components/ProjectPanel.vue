@@ -10,6 +10,7 @@ import GitStatusPanel from "./GitStatusPanel.vue";
 import BranchManager from "./BranchManager.vue";
 import CommitLogPanel from "./CommitLogPanel.vue";
 import CloudSyncButton from "./CloudSyncButton.vue";
+import CloudDownloadButton from "./CloudDownloadButton.vue";
 import PanelResizer from "./PanelResizer.vue";
 import { Check, FolderSearch, Loader2, Search, TriangleAlert, X } from "lucide-vue-next";
 import Tooltip from "./Tooltip.vue";
@@ -332,7 +333,7 @@ function onBranchListResize(dy: number) {
             </div>
             <div class="flex flex-col items-end gap-1 shrink-0">
               <!-- Nudged right so it lines up with the panel edge. -->
-              <div class="translate-x-1.5"><CloudSyncButton /></div>
+              <div class="flex translate-x-1.5 gap-1.5"><CloudDownloadButton /><CloudSyncButton /></div>
               <span class="text-[11px] text-muted">{{ branches.length }} {{ t('versionsUnit') }}</span>
             </div>
           </div>

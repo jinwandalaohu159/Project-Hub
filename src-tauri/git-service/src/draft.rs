@@ -64,7 +64,7 @@ impl GitService {
             if real_index.exists() {
                 // Copying keeps git's stat cache, so unchanged files are not re-hashed.
                 fs::copy(&real_index, &temp_index)
-                    .map_err(|e| format!("Failed to prepare snapshot index: {}", e))?;
+                    .map_err(|e| format!("FILE_ERROR:{e}"))?;
             } else {
                 self.run_git_with_env(repo_path, &["read-tree", "HEAD"], &envs)?;
             }
@@ -206,10 +206,10 @@ impl GitService {
         let draft_ref = draft_ref(&branch);
         let draft = self
             .resolve_commit(repo_path, &draft_ref)
-            .ok_or_else(|| "There is no unsaved version to restore.".to_string())?;
+            .ok_or_else(|| "NO_DRAFT".to_string())?;
         let base = self
             .resolve_commit(repo_path, &format!("{}^", draft))
-            .ok_or_else(|| "The unsaved version has no base record.".to_string())?;
+            .ok_or_else(|| "DRAFT_NO_BASE".to_string())?;
         let draft_tree = self.tree_of(repo_path, &draft)?;
         lock_repo!(repo_path);
 

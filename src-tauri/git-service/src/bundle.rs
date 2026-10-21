@@ -37,7 +37,7 @@ impl GitService {
         head_branch: &str,
         remote_url: Option<&str>,
     ) -> Result<(), String> {
-        fs::create_dir_all(target).map_err(|e| format!("Failed to create folder: {}", e))?;
+        fs::create_dir_all(target).map_err(|e| format!("FILE_ERROR:{e}"))?;
         let repo = target.to_string_lossy().to_string();
         // An existing repository without any record holds nothing worth keeping; import into it.
         let had_git = target.join(".git").exists();
@@ -45,7 +45,7 @@ impl GitService {
             return Err("TARGET_HAS_HISTORY".to_string());
         }
         let was_empty = fs::read_dir(target)
-            .map_err(|e| format!("Failed to read folder: {}", e))?
+            .map_err(|e| format!("FILE_ERROR:{e}"))?
             .flatten()
             .all(|entry| entry.file_name() == ".git");
         let bundle = bundle.to_string_lossy().to_string();

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, Copy, Eye, ListChecks, Loader2, PenLine } from "lucide-vue-next";
+import { Check, ChevronDown, Copy, Eye, ListChecks, Loader2, PenLine } from "lucide-vue-next";
 import ModalShell from "../ModalShell.vue";
 import type { TranslationKey } from "../../composables/useI18n";
 import { useToast } from "../../composables/useToast";
@@ -9,6 +9,7 @@ import { useI18n } from "../../composables/useI18n";
 import { errorText } from "../../utils/errors";
 import type { McpStatus } from "../../types";
 import { isTauri } from "../../utils/env";
+import { usePersistentRef } from "../../composables/usePersistentRef";
 
 const toast = useToast();
 const { t } = useI18n();
@@ -18,6 +19,8 @@ const port = ref(47821);
 const busy = ref(false);
 const copied = ref<string | null>(null);
 const showTools = ref(false);
+/** The connection snippets are long and only needed while setting up an agent. */
+const showSnippets = usePersistentRef("mcp-snippets-open", false);
 
 const TOOLS: Array<{ name: string; description: TranslationKey; writes: boolean }> = [
   { name: "list_projects", description: "mcpToolListProjects", writes: false },
@@ -121,6 +124,12 @@ const statusLabel = computed(() => {
       </div>
 
       <template v-if="status">
+        <button class="mcp-toggle" :aria-expanded="showSnippets" @click="showSnippets = !showSnippets">
+          <ChevronDown :size="14" class="mcp-toggle-chevron" :class="{ open: showSnippets }" />
+          {{ t('mcpConnect') }}
+        </button>
+        <Transition name="rise">
+        <div v-if="showSnippets" class="space-y-3">
         <div class="mcp-snippet">
           <div class="mcp-snippet-head">
             <span>{{ t('mcpClaudeCode') }}</span>
@@ -139,6 +148,8 @@ const statusLabel = computed(() => {
           </div>
           <code>{{ stdioConfig }}</code>
         </div>
+        </div>
+        </Transition>
         <button class="btn btn-secondary btn-sm w-full" @click="showTools = true">
           <ListChecks :size="14" />{{ t('mcpToolsButton', { count: TOOLS.length }) }}
         </button>
@@ -209,6 +220,27 @@ const statusLabel = computed(() => {
 
 .mcp-dot.bad {
   background: var(--color-error);
+}
+
+.mcp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.mcp-toggle:hover {
+  color: var(--color-ink);
+}
+
+.mcp-toggle-chevron {
+  transform: rotate(-90deg);
+  transition: transform var(--dur-fast) ease;
+}
+
+.mcp-toggle-chevron.open {
+  transform: rotate(0deg);
 }
 
 .mcp-snippet {

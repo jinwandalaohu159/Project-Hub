@@ -81,9 +81,7 @@ impl GitService {
 
     pub fn create_and_switch_branch(&self, repo_path: &str, name: &str) -> Result<(), String> {
         if self.has_unsaved_changes(repo_path)? {
-            return Err(
-                "Save or discard unsaved changes before creating a blank version.".to_string(),
-            );
+            return Err("UNSAVED_BEFORE_BLANK_VERSION".to_string());
         }
 
         lock_repo!(repo_path);

@@ -81,6 +81,12 @@ export interface SyncState {
   behind: number;
 }
 
+/** Result of downloading from the cloud. */
+export interface PullOutcome {
+  /** Save records that came down; 0 when this computer was already up to date. */
+  received: number;
+}
+
 export interface GithubAccount {
   login: string;
   id: number;

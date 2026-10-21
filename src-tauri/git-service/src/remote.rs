@@ -1,6 +1,33 @@
-//! Cloud repository: remote address, sync state and pushing.
+//! Talking to the cloud repository: its address, signing in, fetching and uploading.
 
-use crate::{GitService, SyncState, PUSH_REJECTED};
+use crate::{GitService, PUSH_REJECTED};
+
+/// The version (branch) the cloud keeps for `branch`, as this computer last fetched it.
+pub(crate) fn cloud_ref(branch: &str) -> String {
+    format!("refs/remotes/origin/{branch}")
+}
+
+/// Header that hands a GitHub token to git through the environment, so it never lands in the
+/// command line or the repository config.
+fn auth_header(token: Option<&str>) -> Option<String> {
+    token.map(|token| {
+        format!(
+            "AUTHORIZATION: basic {}",
+            base64_encode(format!("x-access-token:{}", token).as_bytes())
+        )
+    })
+}
+
+/// Never stop to ask for a password: without a usable sign-in git fails instead of hanging.
+fn auth_envs(header: Option<&str>) -> Vec<(&str, &str)> {
+    let mut envs = vec![("GCM_INTERACTIVE", "never"), ("GIT_TERMINAL_PROMPT", "0")];
+    if let Some(header) = header {
+        envs.push(("GIT_CONFIG_COUNT", "1"));
+        envs.push(("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader"));
+        envs.push(("GIT_CONFIG_VALUE_0", header));
+    }
+    envs
+}
 
 impl GitService {
     pub fn get_remote_url(&self, repo_path: &str, name: &str) -> Option<String> {
@@ -19,60 +46,40 @@ impl GitService {
         Ok(())
     }
 
-    pub fn sync_state(&self, repo_path: &str) -> Result<SyncState, String> {
-        let branch = self.get_current_branch(repo_path)?;
-        let remote_url = self.get_remote_url(repo_path, "origin");
-        let upstream = format!("refs/remotes/origin/{}", branch);
-        let has_upstream = !branch.is_empty() && self.resolve_commit(repo_path, &upstream).is_some();
-        let (ahead, behind) = if has_upstream {
-            let range = format!("{}...HEAD", upstream);
-            let output = self.run_git(repo_path, &["rev-list", "--left-right", "--count", &range])?;
-            let mut counts = output.split_whitespace().map(|n| n.parse::<usize>().unwrap_or(0));
-            let behind = counts.next().unwrap_or(0);
-            let ahead = counts.next().unwrap_or(0);
-            (ahead, behind)
-        } else {
-            let ahead = self
-                .run_git(repo_path, &["rev-list", "--count", "HEAD"])
-                .ok()
-                .and_then(|n| n.trim().parse::<usize>().ok())
-                .unwrap_or(0);
-            (ahead, 0)
-        };
-        Ok(SyncState {
-            remote_url,
-            branch,
-            has_upstream,
-            ahead,
-            behind,
-        })
+    /// Brings this computer's copy of the cloud's current version up to date. Returns false when
+    /// the cloud does not have this version (yet).
+    pub fn fetch(&self, repo_path: &str, token: Option<&str>) -> Result<bool, String> {
+        let branch = self.require_current_branch(repo_path)?;
+        if self.get_remote_url(repo_path, "origin").is_none() {
+            return Err("REMOTE_NOT_LINKED".to_string());
+        }
+        let header = auth_header(token);
+        let refspec = format!("+refs/heads/{branch}:{}", cloud_ref(&branch));
+        match self.run_git_with_env(repo_path, &["fetch", "--no-tags", "origin", &refspec], &auth_envs(header.as_deref())) {
+            Ok(_) => Ok(true),
+            Err(error) if error.contains("couldn't find remote ref") => {
+                // Removed from the cloud since: forget the stale copy too.
+                let _ = self.run_git(repo_path, &["update-ref", "-d", &cloud_ref(&branch)]);
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
     }
 
-    /// Pushes the current version to `origin`. A GitHub token, when given, is passed through the
-    /// environment so it never lands in the command line or the repository config.
+    /// Pushes the current version to `origin`.
     pub fn push(&self, repo_path: &str, token: Option<&str>, force: bool) -> Result<(), String> {
         let branch = self.require_current_branch(repo_path)?;
         if self.get_remote_url(repo_path, "origin").is_none() {
             return Err("REMOTE_NOT_LINKED".to_string());
         }
 
-        let header = token.map(|token| {
-            format!(
-                "AUTHORIZATION: basic {}",
-                base64_encode(format!("x-access-token:{}", token).as_bytes())
-            )
-        });
-        let mut envs: Vec<(&str, &str)> = vec![("GCM_INTERACTIVE", "never")];
-        if let Some(header) = header.as_deref() {
-            envs.push(("GIT_CONFIG_COUNT", "1"));
-            envs.push(("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader"));
-            envs.push(("GIT_CONFIG_VALUE_0", header));
-        }
+        let header = auth_header(token);
+        let envs = auth_envs(header.as_deref());
 
         let refspec = format!("refs/heads/{0}:refs/heads/{0}", branch);
         // Only overwrite what this computer last saw in the cloud; newer uploads from elsewhere win.
         let lease = self
-            .resolve_commit(repo_path, &format!("refs/remotes/origin/{}", branch))
+            .resolve_commit(repo_path, &cloud_ref(&branch))
             .map(|known| format!("--force-with-lease=refs/heads/{}:{}", branch, known));
         let mut args = vec!["push", "-u"];
         if force {
@@ -96,13 +103,11 @@ impl GitService {
                 }
             })?;
         // Keep the tracking ref accurate even when git did not update it (e.g. forced pushes).
-        let _ = self.run_git(
-            repo_path,
-            &["update-ref", &format!("refs/remotes/origin/{}", branch), "HEAD"],
-        );
+        let _ = self.run_git(repo_path, &["update-ref", &cloud_ref(&branch), "HEAD"]);
         Ok(())
     }
 }
+
 
 pub fn base64_encode(input: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

@@ -7,6 +7,7 @@ import { useProjectStore } from '../../composables/useProjectStore'
 import { useToast } from '../../composables/useToast'
 import type { AppLogEntry, AppLogSettings } from '../../composables/useAppLog'
 import { errorText } from '../../utils/errors'
+import SelectMenu from '../SelectMenu.vue'
 import { isTauri } from '../../utils/env'
 
 const { t } = useI18n()
@@ -203,19 +204,15 @@ onBeforeUnmount(() => {
         <div class="setting-name">{{ t('operationLogs') }}</div>
         <div class="setting-description">{{ t('operationLogsDescription') }}</div>
       </div>
-      <label class="select-field">
+      <div class="select-field">
         <span>{{ t('logProject') }}</span>
-        <select
+        <SelectMenu
           v-model="selectedLogProjectId"
-          :disabled="projects.length === 0"
+          :options="projects.map((project) => ({ value: project.id, label: project.name }))"
+          :placeholder="t('noProjectForLogs')"
           @change="onLogProjectChange"
-        >
-          <option v-if="projects.length === 0" value="">{{ t('noProjectForLogs') }}</option>
-          <option v-for="project in projects" :key="project.id" :value="project.id">
-            {{ project.name }}
-          </option>
-        </select>
-      </label>
+        />
+      </div>
       <div class="log-fields">
         <label class="number-field">
           <span>{{ t('logMaxSizeMb') }}</span>

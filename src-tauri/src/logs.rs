@@ -43,7 +43,7 @@ pub(crate) fn app_install_dir() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     exe.parent()
         .map(PathBuf::from)
-        .ok_or_else(|| "Cannot determine app install directory".to_string())
+        .ok_or_else(|| "APP_DIR_UNKNOWN".to_string())
 }
 
 /// Where logs lived before they moved into each project; only read for migration.

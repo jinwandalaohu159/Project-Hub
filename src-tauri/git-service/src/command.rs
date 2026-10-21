@@ -81,7 +81,7 @@ impl GitService {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| format!("Failed to execute git: {}", e))?;
+            .map_err(|e| format!("GIT_NOT_RUNNABLE:{e}"))?;
         // Written from another thread: git may fill its output pipe before it has read all input.
         let writer = child.stdin.take().map(|mut stdin| {
             let input = input.as_bytes().to_vec();
@@ -89,7 +89,7 @@ impl GitService {
         });
         let output = child
             .wait_with_output()
-            .map_err(|e| format!("Failed to execute git: {}", e))?;
+            .map_err(|e| format!("GIT_NOT_RUNNABLE:{e}"))?;
         let written = writer
             .map(|handle| handle.join().unwrap_or(Ok(())))
             .unwrap_or(Ok(()));
@@ -97,7 +97,7 @@ impl GitService {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("git {} failed: {}", args.join(" "), stderr.trim()));
         }
-        written.map_err(|e| format!("Failed to write to git: {}", e))?;
+        written.map_err(|e| format!("GIT_NOT_RUNNABLE:{e}"))?;
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
@@ -117,7 +117,7 @@ impl GitService {
         let output = self
             .base_command(repo_path, args, envs)
             .output()
-            .map_err(|e| format!("Failed to execute git: {}", e))?;
+            .map_err(|e| format!("GIT_NOT_RUNNABLE:{e}"))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

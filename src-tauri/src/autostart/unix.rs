@@ -82,7 +82,7 @@ fn launcher_path() -> Result<String, String> {
 
 #[cfg(not(target_os = "windows"))]
 fn entry_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot determine the home folder.".to_string())?;
+    let home = dirs::home_dir().ok_or_else(|| "APP_DIR_UNKNOWN".to_string())?;
     if cfg!(target_os = "macos") {
         Ok(home.join("Library").join("LaunchAgents").join(format!("{APP_ID}.plist")))
     } else {

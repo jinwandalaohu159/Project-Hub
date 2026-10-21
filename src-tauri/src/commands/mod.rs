@@ -1,5 +1,6 @@
 //! Tauri commands, grouped by area. Each module only translates between the UI and the services.
 
+pub(crate) mod account;
 pub(crate) mod cloud;
 pub(crate) mod git;
 pub(crate) mod mcp;

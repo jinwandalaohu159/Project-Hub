@@ -22,6 +22,7 @@ mod refs;
 mod remote;
 mod rewrite;
 mod status;
+mod sync;
 
 pub use remote::base64_encode;
 pub use rewrite::{RECORD_NOT_IN_VERSION, RECORD_UNDELETABLE};
@@ -128,6 +129,13 @@ pub struct SyncState {
     pub behind: usize,
 }
 
+/// Result of downloading from the cloud.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullOutcome {
+    /// Save records that came down; 0 when this computer was already up to date.
+    pub received: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BundleMeta {
     pub head_branch: String,
@@ -163,3 +171,5 @@ impl GitService {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod sync_tests;

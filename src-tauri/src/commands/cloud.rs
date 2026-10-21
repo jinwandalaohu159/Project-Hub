@@ -1,73 +1,9 @@
-//! GitHub sign-in and uploading projects.
+//! A project's cloud repository: creating or linking it, uploading and downloading.
 
+use super::account::require_token;
 use super::git::{identity_of, run_git_task};
-use super::preferences::update_settings;
-use crate::{github, github_login, settings, AppState};
+use crate::{github, AppState};
 use git_service::GitService;
-use tauri::Manager;
-
-pub(crate) fn require_token() -> Result<String, String> {
-    github::load_token().ok_or_else(|| "GITHUB_NOT_SIGNED_IN".to_string())
-}
-
-pub(crate) fn finish_login(app: &tauri::AppHandle, token: &str) -> Result<settings::GithubAccount, String> {
-    let account = github::fetch_user(token)?;
-    github::store_token(token)?;
-    let state = app.state::<AppState>();
-    update_settings(&state, |settings| settings.github = Some(account.clone()))?;
-    Ok(account)
-}
-
-/// Starts a browser sign-in and returns the code the user enters on github.com.
-#[tauri::command]
-pub(crate) async fn github_browser_login_start() -> Result<github_login::DeviceCode, String> {
-    tauri::async_runtime::spawn_blocking(github_login::start)
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-/// Waits until the user has approved the code from `github_browser_login_start`, then signs in.
-#[tauri::command]
-pub(crate) async fn github_browser_login_finish(app: tauri::AppHandle) -> Result<settings::GithubAccount, String> {
-    tauri::async_runtime::spawn_blocking(move || finish_login(&app, &github_login::wait_for_token()?))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub(crate) fn github_browser_login_cancel() {
-    github_login::cancel();
-}
-
-#[tauri::command]
-pub(crate) async fn github_login_token(app: tauri::AppHandle, token: String) -> Result<settings::GithubAccount, String> {
-    let token = token.trim().to_string();
-    if token.is_empty() {
-        return Err("GITHUB_TOKEN_EMPTY".to_string());
-    }
-    tauri::async_runtime::spawn_blocking(move || finish_login(&app, &token))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub(crate) async fn github_logout(app: tauri::AppHandle) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        update_settings(&state, |settings| settings.github = None)?;
-        github::delete_token();
-        Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub(crate) async fn github_list_repos() -> Result<Vec<github::RepoInfo>, String> {
-    tauri::async_runtime::spawn_blocking(|| github::list_repos(&require_token()?))
-        .await
-        .map_err(|e| e.to_string())?
-}
 
 #[tauri::command]
 pub(crate) async fn get_sync_state(repo_path: String) -> Result<git_service::SyncState, String> {
@@ -79,14 +15,18 @@ pub(crate) fn suggest_repo_name(name: String) -> String {
     github::sanitize_repo_name(&name)
 }
 
-pub(crate) fn push_with_account(svc: &GitService, repo_path: &str, force: bool) -> Result<(), String> {
+/// The GitHub sign-in for the project's cloud repository. Uploading always needs one; downloading
+/// only from a private repository, so there it is used when present.
+fn github_token(svc: &GitService, repo_path: &str, required: bool) -> Result<Option<String>, String> {
     let url = svc.get_remote_url(repo_path, "origin").unwrap_or_default();
-    let token = if github::is_github_https(&url) {
-        Some(require_token()?)
+    if !github::is_github_https(&url) {
+        return Ok(None);
+    }
+    if required {
+        require_token().map(Some)
     } else {
-        None
-    };
-    svc.push(repo_path, token.as_deref(), force)
+        Ok(github::load_token())
+    }
 }
 
 #[tauri::command]
@@ -122,5 +62,32 @@ pub(crate) async fn link_remote(repo_path: String, url: String) -> Result<String
 
 #[tauri::command]
 pub(crate) async fn push_to_remote(repo_path: String, force: bool) -> Result<(), String> {
-    run_git_task(move |svc| push_with_account(&svc, &repo_path, force)).await
+    run_git_task(move |svc| svc.push(&repo_path, github_token(&svc, &repo_path, true)?.as_deref(), force)).await
+}
+
+/// Asks the cloud what it has now and compares with this computer.
+#[tauri::command]
+pub(crate) async fn fetch_remote(repo_path: String) -> Result<git_service::SyncState, String> {
+    run_git_task(move |svc| {
+        svc.fetch(&repo_path, github_token(&svc, &repo_path, false)?.as_deref())?;
+        svc.sync_state(&repo_path)
+    })
+    .await
+}
+
+#[tauri::command]
+pub(crate) async fn pull_from_remote(repo_path: String) -> Result<git_service::PullOutcome, String> {
+    run_git_task(move |svc| svc.pull(&repo_path, github_token(&svc, &repo_path, false)?.as_deref())).await
+}
+
+/// Takes the cloud's version, keeping this computer's own records as a new version; returns its name.
+#[tauri::command]
+pub(crate) async fn use_cloud_version(state: tauri::State<'_, AppState>, repo_path: String) -> Result<String, String> {
+    let identity = identity_of(&state);
+    tauri::async_runtime::spawn_blocking(move || {
+        let svc = GitService::with_identity(identity);
+        svc.use_cloud_version(&repo_path, github_token(&svc, &repo_path, false)?.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

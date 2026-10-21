@@ -89,7 +89,7 @@ pub(crate) fn autostart_task_xml() -> Result<String, String> {
 #[cfg(target_os = "windows")]
 pub(crate) fn write_autostart_task_xml() -> Result<String, String> {
     let task_dir = dirs::data_dir()
-        .ok_or_else(|| "Cannot determine app data directory".to_string())?
+        .ok_or_else(|| "APP_DIR_UNKNOWN".to_string())?
         .join("project-hub")
         .join("tasks");
     std::fs::create_dir_all(&task_dir).map_err(|e| e.to_string())?;

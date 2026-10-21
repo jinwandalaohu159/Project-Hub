@@ -6,6 +6,7 @@ import { useI18n } from "../composables/useI18n";
 import { useTheme } from "../composables/useTheme";
 import { useProjectEvents } from "../composables/useProjectEvents";
 import { useToast } from "../composables/useToast";
+import { useConfirm } from "../composables/useConfirm";
 import { errorText } from "../utils/errors";
 import Tooltip from "./Tooltip.vue";
 import { Lock, Pencil, Redo2, Save, Undo2 } from "lucide-vue-next";
@@ -27,8 +28,9 @@ const saveError = ref<string | null>(null);
 const { selectedFilePath } = useFileStore();
 const { t } = useI18n();
 const { theme } = useTheme();
-const { notifyWorkingTreeChanged } = useProjectEvents();
+const { workingTreeRefreshToken, notifyWorkingTreeChanged } = useProjectEvents();
 const toast = useToast();
+const { confirm } = useConfirm();
 
 async function ensureMonaco() {
   if (monacoApi) return monacoApi;
@@ -165,15 +167,46 @@ async function loadFile(path: string) {
   }
 }
 
+async function readDisk(path: string): Promise<string | null> {
+  const { readTextFile } = await import("@tauri-apps/plugin-fs");
+  return readTextFile(path).catch(() => null);
+}
+
+/**
+ * A download, a restore or switching versions may have rewritten the open file. Unedited, the
+ * editor follows the disk; with edits, saving asks before overwriting (see `saveFile`).
+ */
+async function followDisk() {
+  const path = selectedFilePath.value;
+  if (!editor || !path || isDirty.value) return;
+  const content = await readDisk(path);
+  if (content === null || content === lastSavedContent || path !== selectedFilePath.value || isDirty.value) return;
+  const view = editor.saveViewState();
+  lastSavedContent = content;
+  editor.getModel()?.setValue(content);
+  if (view) editor.restoreViewState(view);
+}
+
 async function saveFile() {
   if (!editor || !selectedFilePath.value || isReadOnly.value) return;
+  const path = selectedFilePath.value;
+  const onDisk = await readDisk(path);
+  if (onDisk !== null && onDisk !== lastSavedContent) {
+    const ok = await confirm({
+      title: t("fileChangedOnDiskTitle"),
+      message: t("fileChangedOnDiskBody"),
+      confirmText: t("fileOverwrite"),
+      danger: true,
+    });
+    if (!ok || path !== selectedFilePath.value) return;
+  }
   if (saveStatusTimer) clearTimeout(saveStatusTimer);
   saveState.value = "saving";
   saveError.value = null;
   try {
     const { writeTextFile } = await import("@tauri-apps/plugin-fs");
     const content = editor.getValue();
-    await writeTextFile(selectedFilePath.value, content);
+    await writeTextFile(path, content);
     lastSavedContent = content;
     isDirty.value = false;
     saveState.value = "saved";
@@ -243,6 +276,8 @@ watch(selectedFilePath, async (path) => {
     saveError.value = null;
   }
 });
+
+watch(workingTreeRefreshToken, () => void followDisk());
 
 watch(theme, () => {
   monacoApi?.editor.setTheme(editorThemeName());

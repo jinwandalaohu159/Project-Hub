@@ -92,7 +92,7 @@ impl GitService {
             .iter()
             .find(|(name, _)| *name == branch_ref)
             .map(|(_, tip)| tip.clone())
-            .ok_or_else(|| "The current version has no records.".to_string())?;
+            .ok_or_else(|| "VERSION_NO_RECORDS".to_string())?;
         let target = self.record_meta(repo_path, &record)?;
         let descendants = self.descendants(repo_path, &record, &tips)?;
         let descendant_set: HashSet<&str> = descendants.iter().map(|meta| meta.hash.as_str()).collect();

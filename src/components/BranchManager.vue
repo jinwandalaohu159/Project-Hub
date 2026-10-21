@@ -10,6 +10,7 @@ import { errorText } from "../utils/errors";
 import { ref, watch } from "vue";
 import { useDismiss } from "../composables/useDismiss";
 import { GitMerge, Plus, Trash2 } from "lucide-vue-next";
+import SelectMenu from "./SelectMenu.vue";
 
 const { selectedProject, loadBranches, branches } = useProjectStore();
 const { t } = useI18n();
@@ -155,8 +156,8 @@ async function mergeBranch() {
   }
 }
 
-const nonCurrentBranches = () =>
-  branches.value.filter((b) => !b.is_current);
+const branchOptions = () =>
+  branches.value.filter((b) => !b.is_current).map((b) => ({ value: b.name, label: b.name }));
 
 watch(versionSwitchToken, () => {
   deleteTarget.value = "";
@@ -214,13 +215,7 @@ watch(versionSwitchToken, () => {
     <!-- Delete branch -->
     <Transition name="rise">
     <div v-if="showDelete" class="py-2 border-t border-border space-y-2">
-      <select
-        v-model="deleteTarget"
-        class="w-full px-3 py-2 text-xs bg-canvas border border-border rounded-md text-ink appearance-none focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
-      >
-        <option value="" disabled>{{ t('selectBranchToDelete') }}</option>
-        <option v-for="b in nonCurrentBranches()" :key="b.name" :value="b.name">{{ b.name }}</option>
-      </select>
+      <SelectMenu v-model="deleteTarget" size="sm" :options="branchOptions()" :placeholder="t('selectBranchToDelete')" />
       <button
         @click="requestDeleteBranch"
         :disabled="!deleteTarget || busy"
@@ -232,13 +227,7 @@ watch(versionSwitchToken, () => {
     <!-- Merge branch -->
     <Transition name="rise">
     <div v-if="showMerge" class="py-2 border-t border-border space-y-2">
-      <select
-        v-model="mergeSource"
-        class="w-full px-3 py-2 text-xs bg-canvas border border-border rounded-md text-ink appearance-none focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
-      >
-        <option value="" disabled>{{ t('selectBranchToMerge') }}</option>
-        <option v-for="b in nonCurrentBranches()" :key="b.name" :value="b.name">{{ b.name }}</option>
-      </select>
+      <SelectMenu v-model="mergeSource" size="sm" :options="branchOptions()" :placeholder="t('selectBranchToMerge')" />
       <button
         @click="mergeBranch"
         :disabled="!mergeSource || busy"

@@ -233,12 +233,12 @@ impl GitService {
     }
 
     pub(crate) fn sync_empty_dir_markers_in_dir(&self, dir: &Path, is_root: bool) -> Result<(), String> {
-        let entries = fs::read_dir(dir).map_err(|e| format!("Failed to read directory: {}", e))?;
+        let entries = fs::read_dir(dir).map_err(|e| format!("FILE_ERROR:{e}"))?;
         let mut has_visible_entry = false;
         let mut keep_file_path = None;
 
         for entry in entries {
-            let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+            let entry = entry.map_err(|e| format!("FILE_ERROR:{e}"))?;
             let entry_path = entry.path();
             let Some(name) = entry_path.file_name().and_then(|name| name.to_str()) else {
                 continue;
@@ -267,7 +267,7 @@ impl GitService {
         match (has_visible_entry, keep_file_path) {
             (true, Some(path)) => {
                 fs::remove_file(path)
-                    .map_err(|e| format!("Failed to remove folder marker: {}", e))?;
+                    .map_err(|e| format!("FILE_ERROR:{e}"))?;
             }
             (false, None) => {
                 let marker_path = dir.join(KEEP_FILE_NAME);
@@ -275,7 +275,7 @@ impl GitService {
                     &marker_path,
                     "Project Hub keeps this empty folder in versions.\n",
                 )
-                .map_err(|e| format!("Failed to create folder marker: {}", e))?;
+                .map_err(|e| format!("FILE_ERROR:{e}"))?;
                 self.hide_marker_file(&marker_path);
             }
             (false, Some(path)) => {
@@ -312,7 +312,7 @@ impl GitService {
         }
 
         fs::create_dir_all(&info_dir)
-            .map_err(|e| format!("Failed to create internal ignore directory: {}", e))?;
+            .map_err(|e| format!("FILE_ERROR:{e}"))?;
         let exclude_path = info_dir.join("exclude");
         let existing = fs::read_to_string(&exclude_path).unwrap_or_default();
         if existing.contains(DEFAULT_IGNORE_MARKER) {
@@ -332,7 +332,7 @@ impl GitService {
         }
 
         fs::write(&exclude_path, content)
-            .map_err(|e| format!("Failed to write internal ignore rules: {}", e))?;
+            .map_err(|e| format!("FILE_ERROR:{e}"))?;
         Ok(())
     }
 
