@@ -164,16 +164,47 @@ const statusLabel = computed(() => {
 
 <style scoped>
 .mcp-dot {
+  position: relative;
+  flex: none;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--color-text-muted);
-  transition: background-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  transition: background-color var(--dur) var(--ease-out);
 }
 
 .mcp-dot.on {
   background: var(--color-success);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success) 22%, transparent);
+}
+
+/* While the server runs, a ring keeps spreading out from the dot. */
+.mcp-dot.on::after {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--color-success);
+  content: "";
+  animation: mcp-pulse 2s var(--ease-out) infinite;
+}
+
+@keyframes mcp-pulse {
+  from {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(3.2);
+  }
+}
+
+/* The global 1ms animations would make a looping ring flicker; keep a still halo instead. */
+@media (prefers-reduced-motion: reduce) {
+  .mcp-dot.on::after {
+    animation: none;
+    opacity: 0.22;
+    transform: scale(1.9);
+  }
 }
 
 .mcp-dot.bad {
