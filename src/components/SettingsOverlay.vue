@@ -40,15 +40,15 @@ function onPanelResize(dx: number) {
       <div class="settings-body">
         <SettingsGeneral />
 
-        <SettingsCodeTheme />
-
         <SettingsUpdate />
+
+        <SettingsStartup />
 
         <SettingsAccount />
 
-        <SettingsMcp />
+        <SettingsCodeTheme />
 
-        <SettingsStartup />
+        <SettingsMcp />
 
         <SettingsLogs />
 
