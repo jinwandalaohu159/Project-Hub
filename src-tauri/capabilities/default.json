@@ -43,13 +43,13 @@
       "allow": [
         "**",
         "$HOME",
-        "$HOME\\**",
+        "$HOME/**",
         "$DESKTOP",
-        "$DESKTOP\\**",
+        "$DESKTOP/**",
         "$DOCUMENT",
-        "$DOCUMENT\\**",
+        "$DOCUMENT/**",
         "$DOWNLOAD",
-        "$DOWNLOAD\\**"
+        "$DOWNLOAD/**"
       ]
     }
   ]
