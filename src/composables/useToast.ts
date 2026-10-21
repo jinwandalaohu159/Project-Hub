@@ -1,4 +1,5 @@
 import { ref } from "vue";
+import { logApp } from "./useAppLog";
 
 export type ToastKind = "success" | "error" | "info" | "warning";
 
@@ -65,6 +66,12 @@ function push(kind: ToastKind, message: string, options: ToastOptions = {}) {
     existing.action = options.action;
     schedule(existing.id, duration);
     return existing.id;
+  }
+
+  // Every problem the user is shown also lands in the app log (once, not on each refresh).
+  if (kind === "error" || kind === "warning") {
+    const text = options.detail ? `${message} — ${options.detail}` : message;
+    void logApp(kind === "error" ? "error" : "warn", kind === "error" ? "ui.error" : "ui.warning", text);
   }
 
   const toast: Toast = { id: nextId++, kind, message, duration, ...options };

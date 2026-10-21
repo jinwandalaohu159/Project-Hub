@@ -115,11 +115,7 @@ impl GitService {
 
     fn save_version_locked(&self, repo_path: &str, message: &str) -> Result<(), String> {
         lock_repo!(repo_path);
-        self.add_all(repo_path)?;
-        if self.has_staged_changes(repo_path)? {
-            return self.commit(repo_path, message);
-        }
-
+        // Empty folders are part of every save, not only of saves without other changes.
         self.add_all_with_empty_dir_markers(repo_path)?;
         if !self.has_staged_changes(repo_path)? {
             return Ok(());

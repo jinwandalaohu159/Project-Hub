@@ -44,6 +44,7 @@ pub(crate) fn trace_startup(event: impl AsRef<str>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    logs::install_panic_logger();
     if std::env::args().any(|arg| arg == "--mcp") {
         // Agents launch this as a stdio MCP server; no window, tray or single-app state involved.
         mcp::run_stdio(&mcp::FileHost);
@@ -72,6 +73,17 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .setup(move |app| {
             trace_startup("setup:enter");
+            logs::app_log(
+                "info",
+                "app.start",
+                &format!(
+                    "v{} on {} {}{}",
+                    app.package_info().version,
+                    std::env::consts::OS,
+                    std::env::consts::ARCH,
+                    if start_hidden { " (started in the tray)" } else { "" }
+                ),
+            );
             tray::setup_tray(app)?;
             trace_startup("setup:tray_created");
 

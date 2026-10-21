@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useProjectStore } from './composables/useProjectStore'
 import { useFileStore } from './composables/useFileStore'
 import { useI18n } from './composables/useI18n'
 import { useProjectEvents } from './composables/useProjectEvents'
 import { useTheme } from './composables/useTheme'
-import { usePersistentRef, clamp } from './composables/usePersistentRef'
+import { usePanelLayout } from './composables/usePanelLayout'
 import ProjectPanel from './components/ProjectPanel.vue'
 import FileTree from './components/FileTree.vue'
 import CodeViewer from './components/CodeViewer.vue'
 import PanelResizer from './components/PanelResizer.vue'
 import CollapsiblePanel from './components/CollapsiblePanel.vue'
 import SettingsOverlay from './components/SettingsOverlay.vue'
-import DevPanel from './components/DevPanel.vue'
 import ToastHost from './components/ToastHost.vue'
 import ConfirmHost from './components/ConfirmHost.vue'
 import GithubLoginDialog from './components/GithubLoginDialog.vue'
@@ -25,38 +24,36 @@ import { Plus, Columns2, Rows2 } from 'lucide-vue-next'
 import Tooltip from './components/Tooltip.vue'
 import { isTauri } from './utils/env'
 
-const DEFAULT_LEFT_WIDTH = 300
-const DEFAULT_MIDDLE_WIDTH = 280
-const DEFAULT_VERTICAL_SPLIT = 66.3
-const MIN_PANEL_WIDTH = 160
-const MAX_PANEL_WIDTH = 900
-
 const projectStore = useProjectStore()
 const fileStore = useFileStore()
 const { t } = useI18n()
-const { workingTreeChangeCount, notifyVersionContextChanged } = useProjectEvents()
+const { notifyVersionContextChanged } = useProjectEvents()
 useTheme()
 const updater = useUpdater()
 
 const showSettings = ref(false)
-const showDevPanel = ref(false)
 let unlistenOpenSettings: UnlistenFn | null = null
 let unlistenRepoChanged: UnlistenFn | null = null
 
-const leftWidth = usePersistentRef('left-width', DEFAULT_LEFT_WIDTH)
-const middleWidth = usePersistentRef('middle-width', DEFAULT_MIDDLE_WIDTH)
-
-const leftCollapsed = usePersistentRef('left-collapsed', false)
-const middleCollapsed = usePersistentRef('middle-collapsed', false)
-const rightCollapsed = usePersistentRef('right-collapsed', false)
-
-type LeftLayout = 'horizontal' | 'vertical'
-const leftLayout = usePersistentRef<LeftLayout>('left-layout', 'horizontal')
-
-const leftCollapsedVertical = ref(false)
-const middleCollapsedVertical = ref(false)
-const autoCollapsedFilesForChanges = ref(false)
-const filePanelWasCollapsedBeforeChanges = ref(false)
+const {
+  leftWidth,
+  middleWidth,
+  leftCollapsed,
+  middleCollapsed,
+  rightCollapsed,
+  leftLayout,
+  leftCollapsedVertical,
+  middleCollapsedVertical,
+  verticalSplit,
+  verticalContainerRef,
+  onLeftResize,
+  onMiddleResize,
+  onVerticalResize,
+  resetLeftWidth,
+  resetMiddleWidth,
+  resetVerticalSplit,
+  toggleLeftLayout,
+} = usePanelLayout()
 
 const codePanelTitle = computed(() => {
   const path = fileStore.selectedFilePath.value
@@ -67,52 +64,8 @@ const codePanelTitle = computed(() => {
   return t('code')
 })
 
-/** Panels may grow until the code view would drop below a usable width. */
-function maxPanelWidth(other: number) {
-  const available = typeof window === 'undefined' ? MAX_PANEL_WIDTH : window.innerWidth - other - 240
-  return Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, available))
-}
-
-function onLeftResize(dx: number) {
-  const other = leftLayout.value === 'horizontal' && !middleCollapsed.value ? middleWidth.value : 0
-  leftWidth.value = clamp(leftWidth.value + dx, MIN_PANEL_WIDTH, maxPanelWidth(other))
-}
-
-function onMiddleResize(dx: number) {
-  const other = leftCollapsed.value ? 40 : leftWidth.value
-  middleWidth.value = clamp(middleWidth.value + dx, MIN_PANEL_WIDTH, maxPanelWidth(other))
-}
-
-const verticalSplit = usePersistentRef('vertical-split', DEFAULT_VERTICAL_SPLIT) // percentage, project panel gets more space
 const verticalFileOffsetPx = 10
-const verticalContainerRef = ref<HTMLElement | null>(null)
 const toolbarButtonClass = 'w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-ink hover:bg-surface-raised transition-colors'
-
-function onVerticalResize(dy: number) {
-  const containerHeight = verticalContainerRef.value?.clientHeight ?? 600
-  const deltaPercent = (dy / containerHeight) * 100
-  verticalSplit.value = clamp(verticalSplit.value + deltaPercent, 15, 85)
-}
-
-function toggleLeftLayout() {
-  leftLayout.value = leftLayout.value === 'horizontal' ? 'vertical' : 'horizontal'
-}
-
-watch([leftLayout, workingTreeChangeCount], ([layout, changeCount]) => {
-  const shouldCollapseFiles = layout === 'vertical' && changeCount > 0
-
-  if (shouldCollapseFiles && !autoCollapsedFilesForChanges.value) {
-    filePanelWasCollapsedBeforeChanges.value = middleCollapsedVertical.value
-    middleCollapsedVertical.value = true
-    autoCollapsedFilesForChanges.value = true
-    return
-  }
-
-  if (!shouldCollapseFiles && autoCollapsedFilesForChanges.value) {
-    middleCollapsedVertical.value = filePanelWasCollapsedBeforeChanges.value
-    autoCollapsedFilesForChanges.value = false
-  }
-})
 
 onMounted(async () => {
   if (!isTauri()) {
@@ -146,9 +99,7 @@ onUnmounted(() => {
   <div class="flex h-full w-full flex-col">
   <!-- Custom title bar: global actions sit next to the window buttons, whatever panels are collapsed. -->
   <TitleBar
-    :dev-panel-open="showDevPanel"
     :settings-open="showSettings"
-    @toggle-dev-panel="showDevPanel = !showDevPanel"
     @open-settings="showSettings = true"
   />
   <UpdateBanner />
@@ -184,7 +135,7 @@ onUnmounted(() => {
         </template>
         <ProjectPanel />
       </CollapsiblePanel>
-      <PanelResizer v-if="!leftCollapsed" side="left" @resize="onLeftResize" @reset="leftWidth = DEFAULT_LEFT_WIDTH" />
+      <PanelResizer v-if="!leftCollapsed" side="left" @resize="onLeftResize" @reset="resetLeftWidth" />
 
       <!-- Middle Panel: FileTree -->
       <CollapsiblePanel
@@ -196,7 +147,7 @@ onUnmounted(() => {
       >
         <FileTree />
       </CollapsiblePanel>
-      <PanelResizer v-if="!middleCollapsed" side="left" @resize="onMiddleResize" @reset="middleWidth = DEFAULT_MIDDLE_WIDTH" />
+      <PanelResizer v-if="!middleCollapsed" side="left" @resize="onMiddleResize" @reset="resetMiddleWidth" />
     </template>
 
     <template v-else>
@@ -237,7 +188,7 @@ onUnmounted(() => {
           v-if="!leftCollapsedVertical && !middleCollapsedVertical"
           direction="vertical"
           @resize="onVerticalResize"
-          @reset="verticalSplit = DEFAULT_VERTICAL_SPLIT"
+          @reset="resetVerticalSplit"
         />
         <CollapsiblePanel
           v-model:collapsed="middleCollapsedVertical"
@@ -249,7 +200,7 @@ onUnmounted(() => {
           <FileTree />
         </CollapsiblePanel>
       </div>
-      <PanelResizer side="left" @resize="onLeftResize" @reset="leftWidth = DEFAULT_LEFT_WIDTH" />
+      <PanelResizer side="left" @resize="onLeftResize" @reset="resetLeftWidth" />
     </template>
 
     <!-- Right Panel: CodeViewer -->
@@ -266,9 +217,6 @@ onUnmounted(() => {
     <Transition name="settings">
       <SettingsOverlay v-if="showSettings" @close="showSettings = false" />
     </Transition>
-
-    <!-- Dev panel (Ctrl+Shift+D) -->
-    <DevPanel v-if="showDevPanel" @close="showDevPanel = false" />
 
     <ConfirmHost />
     <GithubLoginDialog />

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { ArrowDownToLine, Bug, Copy, Loader2, Minus, Settings, Square, X } from 'lucide-vue-next'
+import { ArrowDownToLine, Copy, Loader2, Minus, Settings, Square, X } from 'lucide-vue-next'
 import Tooltip from './Tooltip.vue'
 import { useI18n } from '../composables/useI18n'
 import { useWindowState } from '../composables/useWindowState'
@@ -8,12 +8,10 @@ import { useUpdater } from '../composables/useUpdater'
 import { isMac, isTauri } from '../utils/env'
 
 defineProps<{
-  devPanelOpen: boolean
   settingsOpen: boolean
 }>()
 
 const emit = defineEmits<{
-  toggleDevPanel: []
   openSettings: []
 }>()
 
@@ -55,11 +53,6 @@ function closeWindow() {
           <span>{{
             phase === 'restarting' ? t('updateRestartingShort') : installing ? `${Math.round(progress * 100)}%` : t('updateButton')
           }}</span>
-        </button>
-      </Tooltip>
-      <Tooltip :text="t('debugPanel')" position="bottom">
-        <button class="title-bar-btn" :class="{ active: devPanelOpen }" @click="emit('toggleDevPanel')">
-          <Bug :size="15" />
         </button>
       </Tooltip>
       <Tooltip :text="t('settings')" position="bottom">

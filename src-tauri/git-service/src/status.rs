@@ -1,10 +1,16 @@
 //! Working-tree status: unsaved changes, empty-folder markers and default ignore rules.
+//!
+//! Git cannot record an empty folder, so Project Hub keeps one by saving a hidden marker file in it.
+//! An empty folder without that marker is therefore an unsaved change like any new file, and every
+//! view of "unsaved" (the change list, upload, switching) goes through [`GitService::status_entries`]
+//! so they always agree. Folders git ignores are never looked into nor given a marker.
 
 #[cfg(windows)]
 use crate::command::hidden_command;
 use crate::{FileDiff, FileStatus, GitService, StatusSummary};
+use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub(crate) const KEEP_FILE_NAME: &str = ".project-hub-keep";
 pub(crate) const DEFAULT_IGNORE_MARKER: &str = "# Project Hub default ignores";
@@ -40,8 +46,46 @@ pub(crate) const IGNORED_DIRS: &[&str] = &[
     "out",
 ];
 
+/// What the empty-folder rules see inside one folder.
+#[derive(Default)]
+struct FolderListing {
+    /// Subfolders to look into: absolute path and path relative to the project ('/'-separated).
+    subdirs: Vec<(PathBuf, String)>,
+    /// Anything that keeps the folder from being empty.
+    has_content: bool,
+    marker: Option<PathBuf>,
+}
+
 impl GitService {
+    /// Every unsaved change, i.e. everything a save would record: what git reports plus empty
+    /// folders still missing their marker.
     pub(crate) fn status_entries(&self, repo_path: &str) -> Result<Vec<FileDiff>, String> {
+        let (mut diffs, ignored) = self.git_status(repo_path)?;
+        let mut empty_dirs = Vec::new();
+        self.collect_unmarked_empty_dirs(Path::new(repo_path), "", &ignored, &mut empty_dirs);
+
+        // A folder git already lists as new ("dir/") covers the empty folders inside it.
+        let new_dirs: Vec<String> = diffs
+            .iter()
+            .filter(|diff| diff.status == FileStatus::Untracked && diff.path.ends_with('/'))
+            .map(|diff| diff.path.clone())
+            .collect();
+        diffs.extend(
+            empty_dirs
+                .into_iter()
+                .filter(|dir| !new_dirs.iter().any(|new_dir| dir.starts_with(new_dir.as_str())))
+                .map(|path| FileDiff {
+                    path,
+                    status: FileStatus::Untracked,
+                    old_path: None,
+                }),
+        );
+        Ok(diffs)
+    }
+
+    /// One `git status`: the changes it reports and the folders it ignores (relative to the
+    /// project, '/'-separated, no trailing slash).
+    fn git_status(&self, repo_path: &str) -> Result<(Vec<FileDiff>, HashSet<String>), String> {
         self.ensure_default_ignores(repo_path)?;
         let output = self.run_git(
             repo_path,
@@ -50,26 +94,24 @@ impl GitService {
                 "--porcelain=v1",
                 "-z",
                 "--ignore-submodules=dirty",
+                // A user's status.showUntrackedFiles=no must not hide new files.
+                "--untracked-files=normal",
+                // Names ignored folders (even empty ones) without listing what is inside them.
+                "--ignored=matching",
             ],
         )?;
-        Ok(parse_porcelain_z(&output)
+        let diffs = parse_porcelain_z(&output)
             .into_iter()
             .map(|mut diff| {
                 diff.path = self.display_path_for_status(diff.path);
                 diff
             })
-            .collect())
+            .collect();
+        Ok((diffs, parse_ignored_dirs(&output)))
     }
 
     pub fn get_status(&self, repo_path: &str) -> Result<Vec<FileDiff>, String> {
-        let mut diffs = self.status_entries(repo_path)?;
-        self.collect_unmarked_empty_dirs(
-            Path::new(repo_path),
-            Path::new(repo_path),
-            true,
-            &mut diffs,
-        );
-        Ok(diffs)
+        self.status_entries(repo_path)
     }
 
     pub fn get_status_summary(
@@ -99,192 +141,93 @@ impl GitService {
     }
 
     pub fn has_unsaved_changes(&self, repo_path: &str) -> Result<bool, String> {
-        for entry in self.status_entries(repo_path)? {
-            if entry.status == FileStatus::Untracked {
-                if self.path_has_versionable_content(&Path::new(repo_path).join(&entry.path)) {
-                    return Ok(true);
-                }
-                continue;
-            }
-            return Ok(true);
-        }
-        Ok(self.has_unmarked_empty_dirs(Path::new(repo_path), true))
+        Ok(!self.status_entries(repo_path)?.is_empty())
     }
 
-    pub(crate) fn path_has_versionable_content(&self, path: &Path) -> bool {
-        if path.is_file() {
-            return true;
-        }
-
-        if path.is_dir() {
-            let entries = match fs::read_dir(path) {
-                Ok(entries) => entries,
-                Err(_) => return true,
-            };
-
-            for entry in entries.flatten() {
-                let entry_path = entry.path();
-                let Some(name) = entry_path.file_name().and_then(|name| name.to_str()) else {
-                    continue;
-                };
-                if self.is_ignored_dir_name(name)
-                    || name == KEEP_FILE_NAME
-                    || self.is_nested_git_worktree(&entry_path)
-                {
-                    continue;
-                }
-                if self.path_has_versionable_content(&entry_path) {
-                    return true;
-                }
-            }
-        }
-
-        false
-    }
-
-    pub(crate) fn has_unmarked_empty_dirs(&self, dir: &Path, is_root: bool) -> bool {
-        let entries = match fs::read_dir(dir) {
-            Ok(entries) => entries,
-            Err(_) => return false,
-        };
-
-        let mut has_visible_entry = false;
-        let mut has_keep_file = false;
-
+    /// Lists `dir` for the empty-folder rules; `rel` is `dir` relative to the project ("" for the
+    /// project itself). Folders git ignores and nested repositories are neither looked into nor
+    /// counted; the fixed tool folders (dependencies, caches) never count as content.
+    fn list_folder(&self, dir: &Path, rel: &str, ignored: &HashSet<String>) -> Option<FolderListing> {
+        let entries = fs::read_dir(dir).ok()?;
+        let mut listing = FolderListing::default();
         for entry in entries.flatten() {
-            let entry_path = entry.path();
-            let Some(name) = entry_path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
             if name == KEEP_FILE_NAME {
-                has_keep_file = true;
+                listing.marker = Some(path);
                 continue;
             }
-
-            if entry_path.is_dir() {
-                if self.is_ignored_dir_name(name) || self.is_nested_git_worktree(&entry_path) {
-                    continue;
-                }
-                has_visible_entry = true;
-                if self.has_unmarked_empty_dirs(&entry_path, false) {
-                    return true;
-                }
-            } else {
-                has_visible_entry = true;
+            // Links (including Windows junctions) are recorded as links, never followed.
+            let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+            if !is_dir {
+                listing.has_content = true;
+                continue;
+            }
+            if self.is_ignored_dir_name(&name) || self.is_nested_git_worktree(&path) {
+                continue;
+            }
+            listing.has_content = true;
+            let child_rel = if rel.is_empty() { name.into_owned() } else { format!("{rel}/{name}") };
+            if !ignored.contains(&child_rel) {
+                listing.subdirs.push((path, child_rel));
             }
         }
-
-        !is_root && !has_visible_entry && !has_keep_file
+        Some(listing)
     }
 
-    pub(crate) fn collect_unmarked_empty_dirs(
+    /// Collects the folders below `dir` that hold nothing and have no marker yet.
+    fn collect_unmarked_empty_dirs(
         &self,
-        root: &Path,
         dir: &Path,
-        is_root: bool,
-        diffs: &mut Vec<FileDiff>,
-    ) -> bool {
-        let entries = match fs::read_dir(dir) {
-            Ok(entries) => entries,
-            Err(_) => return false,
+        rel: &str,
+        ignored: &HashSet<String>,
+        out: &mut Vec<String>,
+    ) {
+        let Some(listing) = self.list_folder(dir, rel, ignored) else {
+            return;
         };
-
-        let mut has_visible_entry = false;
-        let mut has_keep_file = false;
-
-        for entry in entries.flatten() {
-            let entry_path = entry.path();
-            let Some(name) = entry_path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-
-            if name == KEEP_FILE_NAME {
-                has_keep_file = true;
-                continue;
-            }
-
-            if entry_path.is_dir() {
-                if self.is_ignored_dir_name(name) || self.is_nested_git_worktree(&entry_path) {
-                    continue;
-                }
-                has_visible_entry = true;
-                self.collect_unmarked_empty_dirs(root, &entry_path, false, diffs);
-            } else {
-                has_visible_entry = true;
-            }
+        for (child, child_rel) in &listing.subdirs {
+            self.collect_unmarked_empty_dirs(child, child_rel, ignored, out);
         }
-
-        let is_unmarked_empty_dir = !is_root && !has_visible_entry && !has_keep_file;
-        if is_unmarked_empty_dir {
-            if let Ok(relative) = dir.strip_prefix(root) {
-                diffs.push(FileDiff {
-                    path: relative.to_string_lossy().replace('\\', "/"),
-                    status: FileStatus::Untracked,
-                    old_path: None,
-                });
-            }
+        if !rel.is_empty() && !listing.has_content && listing.marker.is_none() {
+            out.push(rel.to_string());
         }
-        is_unmarked_empty_dir
     }
 
+    /// Gives every empty folder its marker and removes markers from folders that are no longer
+    /// empty, so the next record keeps the folder layout as it is. Best effort: a folder that cannot
+    /// be read or written is left alone (and stays listed as unsaved) rather than blocking the save.
     pub(crate) fn sync_empty_dir_markers(&self, repo_path: &str) -> Result<(), String> {
-        self.sync_empty_dir_markers_in_dir(Path::new(repo_path), true)
+        let (_, ignored) = self.git_status(repo_path)?;
+        self.sync_empty_dir_markers_in(Path::new(repo_path), "", &ignored);
+        Ok(())
     }
 
-    pub(crate) fn sync_empty_dir_markers_in_dir(&self, dir: &Path, is_root: bool) -> Result<(), String> {
-        let entries = fs::read_dir(dir).map_err(|e| format!("FILE_ERROR:{e}"))?;
-        let mut has_visible_entry = false;
-        let mut keep_file_path = None;
-
-        for entry in entries {
-            let entry = entry.map_err(|e| format!("FILE_ERROR:{e}"))?;
-            let entry_path = entry.path();
-            let Some(name) = entry_path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-
-            if name == KEEP_FILE_NAME {
-                keep_file_path = Some(entry_path);
-                continue;
-            }
-
-            if entry_path.is_dir() {
-                if self.is_ignored_dir_name(name) || self.is_nested_git_worktree(&entry_path) {
-                    continue;
-                }
-                self.sync_empty_dir_markers_in_dir(&entry_path, false)?;
-                has_visible_entry = true;
-            } else {
-                has_visible_entry = true;
-            }
+    fn sync_empty_dir_markers_in(&self, dir: &Path, rel: &str, ignored: &HashSet<String>) {
+        let Some(listing) = self.list_folder(dir, rel, ignored) else {
+            return;
+        };
+        for (child, child_rel) in &listing.subdirs {
+            self.sync_empty_dir_markers_in(child, child_rel, ignored);
+        }
+        if rel.is_empty() {
+            return;
         }
 
-        if is_root {
-            return Ok(());
-        }
-
-        match (has_visible_entry, keep_file_path) {
-            (true, Some(path)) => {
-                fs::remove_file(path)
-                    .map_err(|e| format!("FILE_ERROR:{e}"))?;
+        match (listing.has_content, listing.marker) {
+            (true, Some(marker)) => {
+                let _ = fs::remove_file(marker);
             }
             (false, None) => {
-                let marker_path = dir.join(KEEP_FILE_NAME);
-                fs::write(
-                    &marker_path,
-                    "Project Hub keeps this empty folder in versions.\n",
-                )
-                .map_err(|e| format!("FILE_ERROR:{e}"))?;
-                self.hide_marker_file(&marker_path);
+                let marker = dir.join(KEEP_FILE_NAME);
+                if fs::write(&marker, "Project Hub keeps this empty folder in versions.\n").is_ok() {
+                    self.hide_marker_file(&marker);
+                }
             }
-            (false, Some(path)) => {
-                self.hide_marker_file(&path);
-            }
-            _ => {}
+            (false, Some(marker)) => self.hide_marker_file(&marker),
+            (true, None) => {}
         }
-
-        Ok(())
     }
 
     /// Untracked files the ignore rules keep out of the history, relative to the project with '/'
@@ -338,6 +281,12 @@ impl GitService {
 
     #[cfg(windows)]
     pub(crate) fn hide_marker_file(&self, path: &Path) {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        // Every save visits every marker; only start `attrib` for one that is not hidden yet.
+        if fs::metadata(path).is_ok_and(|meta| meta.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0) {
+            return;
+        }
         let _ = hidden_command("attrib").arg("+H").arg(path).status();
     }
 
@@ -346,6 +295,7 @@ impl GitService {
 }
 
 /// Parses `git status --porcelain=v1 -z`; rename entries carry the old path as a separate field.
+/// Ignored entries ("!!") are not changes and are skipped.
 pub(crate) fn parse_porcelain_z(output: &str) -> Vec<FileDiff> {
     let mut diffs = Vec::new();
     let mut fields = output.split('\0');
@@ -354,6 +304,9 @@ pub(crate) fn parse_porcelain_z(output: &str) -> Vec<FileDiff> {
             continue;
         }
         let code = &entry[..2];
+        if code == "!!" {
+            continue;
+        }
         let path = entry[3..].to_string();
         let index_code = code.as_bytes()[0] as char;
         let worktree_code = code.as_bytes()[1] as char;
@@ -384,4 +337,15 @@ pub(crate) fn parse_porcelain_z(output: &str) -> Vec<FileDiff> {
         });
     }
     diffs
+}
+
+/// The ignored folders ("!! dir/") in `git status --porcelain=v1 -z --ignored` output, without the
+/// trailing slash. A rename's second field is a file path, which never ends in '/'.
+pub(crate) fn parse_ignored_dirs(output: &str) -> HashSet<String> {
+    output
+        .split('\0')
+        .filter_map(|entry| entry.strip_prefix("!! "))
+        .filter_map(|path| path.strip_suffix('/'))
+        .map(|path| path.replace('\\', "/"))
+        .collect()
 }

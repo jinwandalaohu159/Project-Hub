@@ -2,7 +2,7 @@
 
 use super::git::identity_of;
 use super::preferences::update_settings;
-use crate::logs::project_log_dir;
+use crate::logs::{log_outcome, project_log_dir};
 use crate::{transfer, AppState};
 use git_service::GitService;
 use tauri::Manager;
@@ -12,7 +12,8 @@ pub(crate) async fn export_data(
     app: tauri::AppHandle,
     path: String,
 ) -> Result<transfer::ExportReport, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let detail = path.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let projects = state
             .project_service
@@ -31,7 +32,8 @@ pub(crate) async fn export_data(
         )
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    log_outcome("data.export", &detail, result)
 }
 
 #[tauri::command]
@@ -57,7 +59,8 @@ pub(crate) async fn apply_import(
     items: Vec<transfer::ImportItem>,
     import_author: bool,
 ) -> Result<transfer::ImportReport, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let detail = format!("{path} ({} items)", items.len());
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let identity = identity_of(&state);
         let git = GitService::with_identity(identity);
@@ -80,5 +83,6 @@ pub(crate) async fn apply_import(
         Ok(report)
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    log_outcome("data.import", &detail, result)
 }

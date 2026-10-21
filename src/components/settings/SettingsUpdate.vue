@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Download, ExternalLink, Loader2, RefreshCw } from "lucide-vue-next";
 import { useUpdater } from "../../composables/useUpdater";
@@ -14,14 +14,46 @@ const { t } = useI18n();
 
 onMounted(() => {
   loadVersion().catch(() => undefined);
+  if (checking.value) startSpin();
 });
 
+// The icon turns while a check runs and always stops on a full turn, so even an instant check
+// shows one clear rotation instead of a flicker. The timer is a fallback for when no animation
+// events arrive (e.g. the window is hidden).
+const SPIN_FALLBACK_MS = 1500;
+const spinning = ref(false);
+let clickPending = false;
+let fallbackTimer: number | undefined;
+
+function startSpin() {
+  window.clearTimeout(fallbackTimer);
+  spinning.value = true;
+}
+
+function stopSpinSoon() {
+  window.clearTimeout(fallbackTimer);
+  fallbackTimer = window.setTimeout(onSpinTurn, SPIN_FALLBACK_MS);
+}
+
+function onSpinTurn() {
+  if (!checking.value && !clickPending) spinning.value = false;
+}
+
+watch(checking, (busy) => (busy ? startSpin() : stopSpinSoon()));
+onBeforeUnmount(() => window.clearTimeout(fallbackTimer));
+
 async function checkNow() {
+  if (spinning.value) return;
+  startSpin();
+  clickPending = true;
   try {
     const result = await check();
     if (result && !result.available) toast.success(t("updateUpToDate", { version: result.current }));
   } catch (error) {
     toast.error(errorText(error, t), { detail: t("updateCheckFailed") });
+  } finally {
+    clickPending = false;
+    stopSpinSoon();
   }
 }
 
@@ -46,8 +78,8 @@ const status = computed(() => {
           <Loader2 v-if="installing" :size="13" class="spin" /><Download v-else :size="13" />
           {{ installing ? t('updateInProgress') : t('updateNow') }}
         </button>
-        <button v-else class="btn btn-secondary btn-sm shrink-0" :disabled="checking" @click="checkNow">
-          <Loader2 v-if="checking" :size="13" class="spin" /><RefreshCw v-else :size="13" />
+        <button v-else class="btn btn-secondary btn-sm shrink-0" :disabled="spinning" @click="checkNow">
+          <span class="inline-flex" :class="{ spin: spinning }" @animationiteration="onSpinTurn"><RefreshCw :size="13" /></span>
           {{ t('updateCheck') }}
         </button>
       </div>

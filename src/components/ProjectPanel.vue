@@ -1,24 +1,21 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { useProjectStore, type SwitchAction } from "../composables/useProjectStore";
+import { useProjectStore } from "../composables/useProjectStore";
 import { useI18n } from "../composables/useI18n";
 import { useConfirm } from "../composables/useConfirm";
 import { useToast } from "../composables/useToast";
 import { usePersistentRef, clamp } from "../composables/usePersistentRef";
-import SwitchConfirmModal from "./SwitchConfirmModal.vue";
 import GitStatusPanel from "./GitStatusPanel.vue";
-import BranchManager from "./BranchManager.vue";
+import VersionList from "./VersionList.vue";
 import CommitLogPanel from "./CommitLogPanel.vue";
 import CloudSyncButton from "./CloudSyncButton.vue";
 import CloudDownloadButton from "./CloudDownloadButton.vue";
 import PanelResizer from "./PanelResizer.vue";
-import { Check, FolderSearch, Loader2, Search, TriangleAlert, X } from "lucide-vue-next";
+import { FolderSearch, Search, TriangleAlert, X } from "lucide-vue-next";
 import Tooltip from "./Tooltip.vue";
-import type { FileDiff, Project } from "../types";
-import { formatRelativeTime } from "../utils/time";
+import type { Project } from "../types";
 
 const DEFAULT_PROJECT_LIST_HEIGHT = 107;
-const DEFAULT_BRANCH_LIST_HEIGHT = 96;
 
 const {
   projects,
@@ -26,30 +23,21 @@ const {
   selectedProject,
   branches,
   loading,
-  switching,
   loadProjects,
   autoRelocate,
   relocateProject,
   removeProject,
   selectProject,
-  switchBranch,
-  getUnsavedChanges,
 } = useProjectStore();
 
 const { t } = useI18n();
 const { confirm } = useConfirm();
 const toast = useToast();
 
-const showSwitchModal = ref(false);
-const pendingBranch = ref<string | null>(null);
-const unsavedChanges = ref<FileDiff[]>([]);
 const projectQuery = ref("");
 const branchQuery = ref("");
-const switchingTarget = ref<string | null>(null);
 const projectListRef = ref<HTMLElement | null>(null);
-const branchListRef = ref<HTMLElement | null>(null);
 const projectListHeight = usePersistentRef("project-list-height", DEFAULT_PROJECT_LIST_HEIGHT);
-const branchListHeight = usePersistentRef("branch-list-height", DEFAULT_BRANCH_LIST_HEIGHT);
 
 onMounted(async () => {
   await loadProjects();
@@ -84,19 +72,6 @@ const orderedProjects = computed(() => {
   });
 });
 
-const filteredBranches = computed(() => {
-  const query = branchQuery.value.trim().toLowerCase();
-  return branches.value
-    .filter((branch) => {
-      if (!query) return true;
-      return (
-        branch.name.toLowerCase().includes(query) ||
-        (branch.last_commit_message ?? "").toLowerCase().includes(query)
-      );
-    })
-    .sort((a, b) => Number(b.is_current) - Number(a.is_current));
-});
-
 watch(
   selectedProjectId,
   async () => {
@@ -104,80 +79,6 @@ watch(
     projectListRef.value?.scrollTo({ top: 0, behavior: "smooth" });
   }
 );
-
-watch(
-  () => currentBranch.value?.name,
-  async () => {
-    await nextTick();
-    branchListRef.value?.scrollTo({ top: 0, behavior: "smooth" });
-  }
-);
-
-function formatTime(iso: string | null): string {
-  return formatRelativeTime(iso, t);
-}
-
-async function handleBranchClick(branchName: string) {
-  if (switching.value) return;
-
-  const branch = branches.value.find((b) => b.name === branchName);
-  if (branch?.is_current) return;
-
-  const changes = await getUnsavedChanges();
-  if (changes.length > 0) {
-    // The unsaved-changes dialog doubles as the confirmation.
-    pendingBranch.value = branchName;
-    unsavedChanges.value = changes;
-    showSwitchModal.value = true;
-    return;
-  }
-
-  const ok = await confirm({
-    title: t('switchVersionTitle'),
-    message: t('switchVersionBody', { name: branchName }),
-    confirmText: t('switchToVersion'),
-  });
-  if (!ok) return;
-  await runSwitch(branchName);
-}
-
-async function runSwitch(branchName: string, action?: SwitchAction) {
-  switchingTarget.value = branchName;
-  const result = await switchBranch(branchName, action);
-  if (result.success) {
-    toast.success(t('switchedVersion', { name: branchName }), action === 'draft' ? { detail: t('draftKeptHint') } : undefined);
-  } else if (result.error === "UNSAVED_CHANGES") {
-    pendingBranch.value = branchName;
-    unsavedChanges.value = await getUnsavedChanges();
-    showSwitchModal.value = true;
-  } else {
-    toast.error(result.error ?? t('unknownError'));
-  }
-  switchingTarget.value = null;
-}
-
-async function handleSwitchAction(action: SwitchAction) {
-  showSwitchModal.value = false;
-  const target = pendingBranch.value;
-  pendingBranch.value = null;
-  if (!target) return;
-  if (action === "discard") {
-    const ok = await confirm({
-      title: t('discardChanges'),
-      message: t('discardBeforeSwitchConfirm'),
-      confirmText: t('discard'),
-      danger: true,
-    });
-    if (!ok) return;
-  }
-  await runSwitch(target, action);
-  unsavedChanges.value = [];
-}
-
-function cancelSwitch() {
-  showSwitchModal.value = false;
-  pendingBranch.value = null;
-}
 
 async function confirmRemove(project: Project) {
   const ok = await confirm({
@@ -197,10 +98,6 @@ async function confirmRemove(project: Project) {
 
 function onProjectListResize(dy: number) {
   projectListHeight.value = clamp(projectListHeight.value + dy, 52, 480);
-}
-
-function onBranchListResize(dy: number) {
-  branchListHeight.value = clamp(branchListHeight.value + dy, 44, 420);
 }
 </script>
 
@@ -339,91 +236,7 @@ function onBranchListResize(dy: number) {
           </div>
         </div>
 
-        <div class="shrink-0 pl-5 pr-5 pt-2 pb-1.5 border-b border-border">
-          <div class="flex items-center justify-between mb-1.5">
-            <h3 class="text-xs font-semibold text-muted uppercase tracking-wider">{{ t('branches') }}</h3>
-            <Transition name="fade">
-              <span v-if="switching" class="inline-flex items-center gap-1 text-xs text-primary">
-                <Loader2 :size="13" class="spin" />
-                {{ t('switchingVersion') }}
-              </span>
-            </Transition>
-          </div>
-          <div class="relative mb-1.5">
-            <Search :size="14" class="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
-            <input
-              v-model="branchQuery"
-              class="w-full h-8 pl-8 pr-3 text-xs bg-canvas border border-border rounded-md text-ink placeholder-text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
-              :placeholder="t('searchVersions')"
-            />
-          </div>
-          <BranchManager />
-        </div>
-
-        <div ref="branchListRef" class="shrink-0 overflow-y-auto border-b border-border-subtle/70" :style="{ height: `${branchListHeight}px` }">
-          <div v-if="branches.length === 0" class="flex flex-col items-center justify-center py-4">
-            <span class="font-serif text-[17px] font-semibold text-muted">{{ t('noBranches') }}</span>
-          </div>
-          <div v-else-if="filteredBranches.length === 0" class="flex flex-col items-center justify-center py-4">
-            <span class="font-serif text-[17px] font-semibold text-muted">{{ t('noVersionMatches') }}</span>
-          </div>
-          <TransitionGroup name="list" tag="div" class="relative">
-            <div
-              v-for="branch in filteredBranches"
-              :key="branch.name"
-              class="group pl-5 pr-5 py-2 cursor-pointer border-b border-border-subtle/70 transition-colors"
-              :class="[
-                branch.is_current ? 'bg-surface-raised' : 'hover:bg-surface-raised',
-                switching && switchingTarget !== branch.name ? 'opacity-45 pointer-events-none' : ''
-              ]"
-              @click="handleBranchClick(branch.name)"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span
-                      v-if="branch.is_current"
-                      class="w-2 h-2 rounded-full bg-success shrink-0"
-                    ></span>
-                    <span
-                      class="text-sm truncate"
-                      :class="branch.is_current ? 'text-success font-medium' : 'text-ink'"
-                    >{{ branch.name }}</span>
-                  </div>
-                  <div class="text-xs text-muted truncate mt-1" :class="branch.is_current ? 'ml-4' : ''">
-                    {{ branch.last_commit_message || t('unknown') }}
-                  </div>
-                  <div v-if="branch.last_commit_time" class="text-xs text-muted mt-0.5" :class="branch.is_current ? 'ml-4' : ''">
-                    {{ formatTime(branch.last_commit_time) }}
-                  </div>
-                </div>
-                <div class="shrink-0">
-                  <span
-                    v-if="branch.is_current"
-                    class="inline-flex items-center gap-1 text-xs text-success px-2 py-1 rounded-md bg-success/10"
-                  >
-                    <Check :size="13" />
-                    {{ t('current') }}
-                  </span>
-                  <span
-                    v-else-if="switchingTarget === branch.name"
-                    class="inline-flex items-center gap-1 text-xs text-primary px-2 py-1 rounded-md bg-primary/10"
-                  >
-                    <Loader2 :size="13" class="spin" />
-                    {{ t('switchingVersion') }}
-                  </span>
-                  <span
-                    v-else
-                    class="text-xs text-muted opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    {{ t('switchToVersion') }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </TransitionGroup>
-        </div>
-        <PanelResizer direction="vertical" @resize="onBranchListResize" @reset="branchListHeight = DEFAULT_BRANCH_LIST_HEIGHT" />
+        <VersionList v-model:query="branchQuery" />
 
         <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
           <CommitLogPanel />
@@ -434,13 +247,5 @@ function onBranchListResize(dy: number) {
         <span class="font-serif text-[20px] font-semibold text-muted leading-tight">{{ t('selectProjectFirst') }}</span>
       </div>
     </Transition>
-
-    <SwitchConfirmModal
-      :open="showSwitchModal"
-      :changes="unsavedChanges"
-      :target="pendingBranch ?? ''"
-      @choose="handleSwitchAction"
-      @cancel="cancelSwitch"
-    />
   </aside>
 </template>

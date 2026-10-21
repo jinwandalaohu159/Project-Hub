@@ -1,6 +1,7 @@
 //! Signing in to GitHub: in the browser, with a pasted token, and signing out.
 
 use super::preferences::update_settings;
+use crate::logs::{app_log, log_outcome};
 use crate::{github, github_login, settings, AppState};
 use tauri::Manager;
 
@@ -9,11 +10,18 @@ pub(crate) fn require_token() -> Result<String, String> {
 }
 
 pub(crate) fn finish_login(app: &tauri::AppHandle, token: &str) -> Result<settings::GithubAccount, String> {
-    let account = github::fetch_user(token)?;
-    github::store_token(token)?;
-    let state = app.state::<AppState>();
-    update_settings(&state, |settings| settings.github = Some(account.clone()))?;
-    Ok(account)
+    let result = (|| -> Result<settings::GithubAccount, String> {
+        let account = github::fetch_user(token)?;
+        github::store_token(token)?;
+        let state = app.state::<AppState>();
+        update_settings(&state, |settings| settings.github = Some(account.clone()))?;
+        Ok(account)
+    })();
+    match &result {
+        Ok(account) => app_log("info", "account.login", &account.login),
+        Err(error) => app_log("error", "account.login", error),
+    }
+    result
 }
 
 /// Starts a browser sign-in and returns the code the user enters on github.com.
@@ -50,14 +58,15 @@ pub(crate) async fn github_login_token(app: tauri::AppHandle, token: String) -> 
 
 #[tauri::command]
 pub(crate) async fn github_logout(app: tauri::AppHandle) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         update_settings(&state, |settings| settings.github = None)?;
         github::delete_token();
         Ok(())
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    log_outcome("account.logout", "", result)
 }
 
 #[tauri::command]

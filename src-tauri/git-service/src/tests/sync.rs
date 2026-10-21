@@ -38,10 +38,8 @@ fn world() -> World {
     let a = root.path().join("a");
     fs::create_dir_all(&a).unwrap();
     git(&a, &["init", "-q", "-b", "main"]);
-    for dir in [&a] {
-        git(dir, &["config", "user.email", "t@t.com"]);
-        git(dir, &["config", "user.name", "T"]);
-    }
+    git(&a, &["config", "user.email", "t@t.com"]);
+    git(&a, &["config", "user.name", "T"]);
     save(&a, "app.txt", "v1", "first");
     git(&a, &["remote", "add", "origin", cloud.to_str().unwrap()]);
     GitService::new().push(a.to_str().unwrap(), None, false).unwrap();

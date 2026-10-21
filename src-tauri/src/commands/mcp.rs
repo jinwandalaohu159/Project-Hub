@@ -2,7 +2,7 @@
 
 use super::git::identity_of;
 use super::preferences::update_settings;
-use crate::logs::append_app_log;
+use crate::logs::append_project_log;
 use crate::{mcp, settings, AppState};
 use serde::Serialize;
 use std::sync::Arc;
@@ -45,7 +45,7 @@ impl mcp::McpHost for AppHost {
     }
 
     fn on_saved(&self, project: &project_service::Project, message: &str) {
-        append_app_log(
+        append_project_log(
             &project.id,
             &project.name,
             "save.create",
@@ -67,17 +67,27 @@ pub(crate) fn restart_mcp(app: &tauri::AppHandle) {
     let Ok(mut runtime) = state.mcp.lock() else {
         return;
     };
+    let was_running = runtime.server.is_some();
     if let Some(server) = runtime.server.take() {
         server.stop();
     }
     runtime.error = None;
     if !enabled {
+        if was_running {
+            crate::logs::app_log("info", "mcp.stop", "");
+        }
         return;
     }
     let host: Arc<dyn mcp::McpHost> = Arc::new(AppHost { app: app.clone() });
     match mcp::McpServer::start(port, host) {
-        Ok(server) => runtime.server = Some(server),
-        Err(error) => runtime.error = Some(error),
+        Ok(server) => {
+            runtime.server = Some(server);
+            crate::logs::app_log("info", "mcp.start", &mcp::endpoint(port));
+        }
+        Err(error) => {
+            crate::logs::app_log("error", "mcp.start", &format!("port {port}: {error}"));
+            runtime.error = Some(error);
+        }
     }
 }
 

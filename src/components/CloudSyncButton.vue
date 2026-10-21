@@ -112,7 +112,7 @@ async function linkRepo(url: string) {
     :tooltip="tooltip"
     :loading="uploading"
     :disabled="busy || !selectedProject?.is_git_repo"
-    :badge="pendingCount > 0 ? `↑${pendingCount}` : null"
+    :count="pendingCount"
     @click="upload"
   />
   <PublishDialog

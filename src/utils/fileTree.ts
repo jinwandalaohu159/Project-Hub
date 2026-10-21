@@ -32,6 +32,38 @@ export function removeNode<T extends TreeNode<T>>(nodes: T[], path: string): T |
   return null;
 }
 
+/**
+ * Moves the node at `sourcePath` into the folder `targetDirectoryPath` (or the top level when it is
+ * `rootPath`), renaming its paths to start at `newPath`. Returns false when the node or the target
+ * folder is not in the tree.
+ */
+export function moveNode<T extends TreeNode<T> & { is_loaded?: boolean }>(
+  nodes: T[],
+  rootPath: string | null,
+  sourcePath: string,
+  targetDirectoryPath: string,
+  newPath: string
+): boolean {
+  const movedNode = removeNode(nodes, sourcePath);
+  if (!movedNode) return false;
+
+  updateNodePath(movedNode, sourcePath, newPath);
+
+  if (rootPath === targetDirectoryPath) {
+    nodes.push(movedNode);
+    sortNodes(nodes);
+    return true;
+  }
+
+  const targetNode = findNode(nodes, targetDirectoryPath);
+  if (!targetNode || !targetNode.is_dir) return false;
+
+  targetNode.children.push(movedNode);
+  targetNode.is_loaded = true;
+  sortNodes(targetNode.children);
+  return true;
+}
+
 export function updateNodePath<T extends TreeNode<T>>(node: T, oldPath: string, newPath: string) {
   node.path = replacePathPrefix(node.path, oldPath, newPath);
   for (const child of node.children) {

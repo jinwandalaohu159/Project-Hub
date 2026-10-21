@@ -1,6 +1,7 @@
 //! Project list commands.
 
 use super::git::{identity_of, run_git_as};
+use crate::logs::log_outcome;
 use crate::AppState;
 use git_service::VersioningOutcome;
 use project_service::{Project, ProjectService};
@@ -36,9 +37,14 @@ pub(crate) struct AddedProject {
 
 #[tauri::command]
 pub(crate) async fn add_project(app: tauri::AppHandle, path: String) -> Result<AddedProject, String> {
-    let versioning = ensure_versioned(&app, path.clone()).await?;
-    let project = with_projects(app, move |service| service.add_project(&path)).await?;
-    Ok(AddedProject { project, versioning })
+    let detail = path.clone();
+    let result = async {
+        let versioning = ensure_versioned(&app, path.clone()).await?;
+        let project = with_projects(app, move |service| service.add_project(&path)).await?;
+        Ok(AddedProject { project, versioning })
+    }
+    .await;
+    log_outcome("project.add", &detail, result)
 }
 
 /// Sets up a listed project that has no repository or no record yet (copied without `.git`,
@@ -63,7 +69,18 @@ pub(crate) async fn ensure_project_versioned(app: tauri::AppHandle, id: String) 
 
 #[tauri::command]
 pub(crate) async fn remove_project(app: tauri::AppHandle, id: String) -> Result<(), String> {
-    with_projects(app, move |service| service.remove_project(&id)).await
+    let result = with_projects(app, move |service| {
+        let label = service
+            .get_project(&id)
+            .map(|project| format!("{} ({})", project.name, project.path))
+            .unwrap_or_else(|| id.clone());
+        service.remove_project(&id).map(|_| label)
+    })
+    .await;
+    match result {
+        Ok(label) => log_outcome("project.remove", &label, Ok(())),
+        Err(error) => log_outcome("project.remove", "", Err(error)),
+    }
 }
 
 #[tauri::command]
@@ -75,7 +92,15 @@ pub(crate) async fn list_projects(app: tauri::AppHandle) -> Result<Vec<project_s
 pub(crate) async fn auto_relocate_projects(
     app: tauri::AppHandle,
 ) -> Result<Vec<project_service::RelocatedProject>, String> {
-    with_projects(app, |service| Ok(service.auto_relocate_missing())).await
+    let relocated = with_projects(app, |service| Ok(service.auto_relocate_missing())).await?;
+    for project in &relocated {
+        crate::logs::app_log(
+            "info",
+            "project.relocate.auto",
+            &format!("{}: {} -> {}", project.name, project.old_path, project.new_path),
+        );
+    }
+    Ok(relocated)
 }
 
 #[tauri::command]
@@ -84,6 +109,11 @@ pub(crate) async fn relocate_project(
     id: String,
     path: String,
 ) -> Result<project_service::Project, String> {
-    ensure_versioned(&app, path.clone()).await?;
-    with_projects(app, move |service| service.relocate_project(&id, &path)).await
+    let detail = path.clone();
+    let result = async {
+        ensure_versioned(&app, path.clone()).await?;
+        with_projects(app, move |service| service.relocate_project(&id, &path)).await
+    }
+    .await;
+    log_outcome("project.relocate", &detail, result)
 }

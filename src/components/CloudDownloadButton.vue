@@ -29,7 +29,7 @@ const tooltip = computed(() => {
     :tooltip="tooltip"
     :loading="downloading"
     :disabled="busy || !sync?.remote_url || !sync.has_upstream"
-    :badge="incoming > 0 ? `↓${incoming}` : null"
+    :count="incoming"
     @click="download"
   />
 

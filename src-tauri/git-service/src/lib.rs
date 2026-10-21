@@ -171,5 +171,3 @@ impl GitService {
 
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod sync_tests;

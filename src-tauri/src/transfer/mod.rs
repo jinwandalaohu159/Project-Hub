@@ -3,20 +3,21 @@
 //! The package is a zip: `manifest.json`, one git bundle per project (all versions, save records and
 //! unsaved changes), the local files the history leaves out (see `local_files`) and the per-project
 //! operation logs.
+//!
+//! `export` writes a package, `import` previews and restores one, `package` holds what both share.
 
+mod export;
+mod import;
 mod local_files;
+mod package;
 
 use chrono::{DateTime, Utc};
 use git_service::GitService;
-use project_service::{same_path, Project, ProjectService};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::{self, File},
-    io::{self, Read},
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
-};
-use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
+use std::{fs, path::Path};
+
+pub use export::export;
+pub use import::{apply, preview};
 
 const FORMAT: &str = "project-hub-export";
 const FORMAT_VERSION: u32 = 1;
@@ -128,287 +129,10 @@ pub fn target_state(path: &str) -> TargetState {
     }
 }
 
-fn scratch_dir(kind: &str) -> Result<PathBuf, String> {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
-    let dir = std::env::temp_dir().join(format!("project-hub-{kind}-{nanos}"));
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir)
-}
-
-fn zip_error(error: zip::result::ZipError) -> String {
-    format!("PACKAGE_ERROR:{error}")
-}
-
-pub fn export(
-    out_path: &Path,
-    projects: &[Project],
-    author_name: &str,
-    author_email: &str,
-    git: &GitService,
-    log_dir_for: impl Fn(&str) -> Option<PathBuf>,
-) -> Result<ExportReport, String> {
-    let scratch = scratch_dir("export")?;
-    let partial_path = out_path.with_extension("partial");
-    let result = (|| {
-        let file = File::create(&partial_path).map_err(|e| format!("EXPORT_CREATE_FAILED:{e}"))?;
-        let mut zip = ZipWriter::new(file);
-        let stored = SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Stored)
-            .large_file(true);
-        let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-        let mut warnings = Vec::new();
-        let mut exported = Vec::new();
-
-        for project in projects {
-            let mut entry = ExportedProject {
-                id: project.id.clone(),
-                name: project.name.clone(),
-                original_path: project.path.clone(),
-                head_branch: None,
-                remote_url: None,
-                bundle: None,
-                has_draft: false,
-                local_files: Vec::new(),
-                logs: Vec::new(),
-            };
-
-            if project.missing {
-                warnings.push(ProjectIssue::new(&project.name, "EXPORT_FOLDER_MISSING"));
-            } else if project.is_git_repo {
-                let bundle_path = scratch.join(format!("{}.bundle", project.id));
-                match git.create_bundle(&project.path, &bundle_path) {
-                    Ok(meta) => {
-                        let name = format!("bundles/{}.bundle", project.id);
-                        zip.start_file(name.as_str(), stored).map_err(zip_error)?;
-                        let mut bundle = File::open(&bundle_path).map_err(|e| e.to_string())?;
-                        io::copy(&mut bundle, &mut zip).map_err(|e| e.to_string())?;
-                        drop(bundle);
-                        let _ = fs::remove_file(&bundle_path);
-                        entry.head_branch = Some(meta.head_branch);
-                        entry.has_draft = meta.has_draft;
-                        entry.bundle = Some(name);
-                    }
-                    Err(error) => warnings.push(ProjectIssue::new(&project.name, error)),
-                }
-                entry.remote_url = git.get_remote_url(&project.path, "origin");
-            }
-
-            if !project.missing {
-                let root = Path::new(&project.path);
-                let carried = local_files::collect(root, project.is_git_repo, git)
-                    .and_then(|files| local_files::write(&mut zip, &project.id, root, &files).map(|()| files));
-                match carried {
-                    Ok(files) => entry.local_files = files,
-                    Err(error) => warnings.push(ProjectIssue::new(&project.name, error)),
-                }
-            }
-
-            if let Some(log_dir) = log_dir_for(&project.id).filter(|dir| dir.is_dir()) {
-                for log in fs::read_dir(&log_dir).map_err(|e| e.to_string())?.flatten() {
-                    let path = log.path();
-                    if !path.is_file() {
-                        continue;
-                    }
-                    let file_name = log.file_name().to_string_lossy().to_string();
-                    let name = format!("logs/{}/{}", project.id, file_name);
-                    zip.start_file(name.as_str(), deflated).map_err(zip_error)?;
-                    let mut source = File::open(&path).map_err(|e| e.to_string())?;
-                    io::copy(&mut source, &mut zip).map_err(|e| e.to_string())?;
-                    entry.logs.push(name);
-                }
-            }
-            exported.push(entry);
-        }
-
-        let manifest = ExportManifest {
-            format: FORMAT.to_string(),
-            version: FORMAT_VERSION,
-            exported_at: Utc::now(),
-            author_name: author_name.to_string(),
-            author_email: author_email.to_string(),
-            projects: exported,
-        };
-        zip.start_file(MANIFEST, deflated).map_err(zip_error)?;
-        serde_json::to_writer_pretty(&mut zip, &manifest).map_err(|e| e.to_string())?;
-        zip.finish().map_err(zip_error)?;
-        Ok(ExportReport {
-            exported: manifest.projects.len(),
-            warnings,
-        })
-    })();
-
-    let _ = fs::remove_dir_all(&scratch);
-    match result {
-        Ok(report) => {
-            let _ = fs::remove_file(out_path);
-            fs::rename(&partial_path, out_path).map_err(|e| e.to_string())?;
-            Ok(report)
-        }
-        Err(error) => {
-            let _ = fs::remove_file(&partial_path);
-            Err(error)
-        }
-    }
-}
-
-/// Ids become file and folder names; reject anything that could escape the scratch folder.
-fn is_safe_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 64 && id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
-}
-
-fn open_package(path: &Path) -> Result<(ZipArchive<File>, ExportManifest), String> {
-    let file = File::open(path).map_err(|e| format!("PACKAGE_OPEN_FAILED:{e}"))?;
-    let mut archive = ZipArchive::new(file).map_err(|_| "EXPORT_NOT_PROJECT_HUB".to_string())?;
-    let mut content = String::new();
-    archive
-        .by_name(MANIFEST)
-        .map_err(|_| "EXPORT_NOT_PROJECT_HUB".to_string())?
-        .read_to_string(&mut content)
-        .map_err(|e| e.to_string())?;
-    let manifest: ExportManifest =
-        serde_json::from_str(&content).map_err(|_| "EXPORT_DAMAGED".to_string())?;
-    if manifest.format != FORMAT {
-        return Err("EXPORT_NOT_PROJECT_HUB".to_string());
-    }
-    if manifest.version > FORMAT_VERSION {
-        return Err("EXPORT_TOO_NEW".to_string());
-    }
-    if !manifest.projects.iter().all(|project| is_safe_id(&project.id)) {
-        return Err("EXPORT_DAMAGED".to_string());
-    }
-    Ok((archive, manifest))
-}
-
-pub fn preview(path: &Path, service: &ProjectService) -> Result<ImportPreview, String> {
-    let (_, manifest) = open_package(path)?;
-    let known = service.list_projects();
-    let projects = manifest
-        .projects
-        .iter()
-        .map(|project| {
-            let original = Path::new(&project.original_path);
-            let usable = original.is_dir() || original.parent().is_some_and(Path::is_dir);
-            ImportPreviewItem {
-                id: project.id.clone(),
-                name: project.name.clone(),
-                original_path: project.original_path.clone(),
-                suggested_path: if usable { project.original_path.clone() } else { String::new() },
-                has_history: project.bundle.is_some(),
-                has_draft: project.has_draft,
-                local_files: project.local_files.len(),
-                registered: known
-                    .iter()
-                    .any(|p| (p.id == project.id || same_path(&p.path, &project.original_path)) && !p.missing),
-            }
-        })
-        .collect();
-    Ok(ImportPreview {
-        exported_at: manifest.exported_at,
-        author_name: manifest.author_name,
-        author_email: manifest.author_email,
-        projects,
-    })
-}
-
-fn extract_entry(archive: &mut ZipArchive<File>, name: &str, dest: &Path) -> Result<(), String> {
-    let mut entry = archive.by_name(name).map_err(zip_error)?;
-    let mut out = File::create(dest).map_err(|e| e.to_string())?;
-    io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-fn register(service: &mut ProjectService, id: &str, target: &str) -> Result<(), String> {
-    if service.list_projects().iter().any(|p| p.id == id) {
-        service.relocate_project(id, target)?;
-    } else if !service.list_projects().iter().any(|p| same_path(&p.path, target)) {
-        service.add_project_with_id(target, Some(id))?;
-    }
-    Ok(())
-}
-
-fn import_one(
-    archive: &mut ZipArchive<File>,
-    project: &ExportedProject,
-    target: &str,
-    scratch: &Path,
-    service: &mut ProjectService,
-    git: &GitService,
-    log_dir_for: &dyn Fn(&str) -> Option<PathBuf>,
-) -> Result<(), String> {
-    let state = target_state(target);
-    match (&project.bundle, state) {
-        (_, TargetState::Repo) => {}
-        (Some(bundle_name), _) => {
-            let bundle_path = scratch.join(format!("{}.bundle", project.id));
-            extract_entry(archive, bundle_name, &bundle_path)?;
-            let head = project.head_branch.as_deref().unwrap_or("master");
-            git.restore_bundle(Path::new(target), &bundle_path, head, project.remote_url.as_deref())?;
-            let _ = fs::remove_file(&bundle_path);
-        }
-        (None, TargetState::Missing) if project.local_files.is_empty() => {
-            return Err("EXPORT_NO_FILES".to_string());
-        }
-        (None, _) => fs::create_dir_all(target).map_err(|e| e.to_string())?,
-    }
-    local_files::restore(archive, &project.id, Path::new(target), &project.local_files)?;
-
-    // Exported without history: start recording from the files already in the folder.
-    git.ensure_versioned(target)?;
-    register(service, &project.id, target)?;
-
-    if let Some(log_dir) = log_dir_for(&project.id) {
-        for name in &project.logs {
-            let Some(file_name) = Path::new(name).file_name() else { continue };
-            let dest = log_dir.join(file_name);
-            if dest.exists() {
-                continue;
-            }
-            fs::create_dir_all(&log_dir).map_err(|e| e.to_string())?;
-            extract_entry(archive, name, &dest)?;
-        }
-    }
-    Ok(())
-}
-
-pub fn apply(
-    path: &Path,
-    items: &[ImportItem],
-    service: &mut ProjectService,
-    git: &GitService,
-    log_dir_for: impl Fn(&str) -> Option<PathBuf>,
-) -> Result<(ImportReport, ExportManifest), String> {
-    let (mut archive, manifest) = open_package(path)?;
-    let scratch = scratch_dir("import")?;
-    let mut report = ImportReport {
-        imported: Vec::new(),
-        errors: Vec::new(),
-    };
-
-    for item in items {
-        let Some(project) = manifest.projects.iter().find(|p| p.id == item.id) else {
-            continue;
-        };
-        let target = item.target_path.trim();
-        if target.is_empty() {
-            report.errors.push(ProjectIssue::new(&project.name, "IMPORT_NO_TARGET"));
-            continue;
-        }
-        match import_one(&mut archive, project, target, &scratch, service, git, &log_dir_for) {
-            Ok(()) => report.imported.push(project.name.clone()),
-            Err(error) => report.errors.push(ProjectIssue::new(&project.name, error)),
-        }
-    }
-
-    let _ = fs::remove_dir_all(&scratch);
-    Ok((report, manifest))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use project_service::ProjectService;
     use std::process::Command;
 
     fn git(path: &Path, args: &[&str]) {

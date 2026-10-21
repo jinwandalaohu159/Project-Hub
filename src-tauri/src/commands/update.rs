@@ -1,5 +1,6 @@
 //! Checking for and installing new versions of Project Hub itself.
 
+use crate::logs::{app_log, app_log_on_change};
 use crate::update;
 use serde::Serialize;
 use std::time::Duration;
@@ -24,9 +25,21 @@ pub(crate) fn get_app_version(app: tauri::AppHandle) -> AppVersionInfo {
 #[tauri::command]
 pub(crate) async fn check_for_update(app: tauri::AppHandle) -> Result<update::UpdateInfo, String> {
     let current = app.package_info().version.to_string();
-    tauri::async_runtime::spawn_blocking(move || update::check(&current))
+    let result = tauri::async_runtime::spawn_blocking(move || update::check(&current))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    // Checks run every few minutes; only a change of outcome is worth a line.
+    match &result {
+        Ok(info) if info.available => app_log_on_change(
+            "update.check",
+            "info",
+            "update.available",
+            &format!("v{} -> v{}", info.current, info.latest),
+        ),
+        Ok(info) => app_log_on_change("update.check", "info", "update.up_to_date", &format!("v{}", info.current)),
+        Err(error) => app_log_on_change("update.check", "warn", "update.check_failed", error),
+    }
+    result
 }
 
 /// Downloads the new installer, starts it and quits; the installer reopens the updated app.
@@ -39,7 +52,8 @@ pub(crate) async fn install_update(
     size: u64,
 ) -> Result<String, String> {
     let progress_app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    app_log("info", "update.install", &name);
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let emit = |phase: &str, downloaded: u64, total: u64| {
             let _ = progress_app.emit(
                 UPDATE_PROGRESS_EVENT,
@@ -56,7 +70,13 @@ pub(crate) async fn install_update(
         Ok::<(), String>(())
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| e.to_string())
+    .and_then(|inner| inner);
+    if let Err(error) = &result {
+        app_log("error", "update.install_failed", error);
+    }
+    result?;
+    app_log("info", "update.restart", "quitting for the installer");
     app.exit(0);
     Ok("restarting".to_string())
 }

@@ -7,14 +7,15 @@ import { useProjectEvents } from "../composables/useProjectEvents";
 import { useConfirm } from "../composables/useConfirm";
 import { useToast } from "../composables/useToast";
 import { useFileTreeDrag } from "../composables/useFileTreeDrag";
+import { useFileTreeWatcher } from "../composables/useFileTreeWatcher";
 import { errorText } from "../utils/errors";
 import { dirname, isChildPath, replacePathPrefix } from "../utils/path";
-import { findNode, removeNode, sortNodes, updateNodePath } from "../utils/fileTree";
-import { watch, ref, onBeforeUnmount } from "vue";
+import { findNode, moveNode, removeNode } from "../utils/fileTree";
+import { watch, ref } from "vue";
 import FileTreeNode from "./FileTreeNode.vue";
 import Tooltip from "./Tooltip.vue";
-import ModalShell from "./ModalShell.vue";
 import ContextMenu from "./ContextMenu.vue";
+import NamePromptDialog from "./NamePromptDialog.vue";
 import { FilePlus, FolderPlus, RefreshCw } from "lucide-vue-next";
 
 const {
@@ -39,19 +40,10 @@ const { confirm } = useConfirm();
 const toast = useToast();
 const treeRoot = ref<HTMLElement | null>(null);
 const fileTreeBody = ref<HTMLElement | null>(null);
+const namePrompt = ref<InstanceType<typeof NamePromptDialog> | null>(null);
 const expandedDirs = ref(new Set<string>());
 const activeNodePath = ref<string | null>(null);
 const contextMenu = ref<{ x: number; y: number; node: FileNode } | null>(null);
-const nameDialogOpen = ref(false);
-const nameDialogTitle = ref("");
-const nameDialogAction = ref("");
-const nameDialogValue = ref("");
-let resolveNameDialog: ((value: string | null) => void) | null = null;
-let unwatchFileTree: (() => void) | null = null;
-let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-let pollTimer: ReturnType<typeof setInterval> | null = null;
-let isRefreshing = false;
-let suppressRefreshUntil = 0;
 
 const {
   draggingNode,
@@ -68,6 +60,17 @@ const {
   onCancel: () => scheduleRefresh(250),
 });
 
+const {
+  start: startWatchingFileTree,
+  stop: stopWatchingFileTree,
+  refreshNow: refreshVisibleTree,
+  scheduleRefresh,
+  suppressFor: suppressRefreshFor,
+} = useFileTreeWatcher({
+  refresh: () => refreshFileTree(expandedDirs.value),
+  isBusy: () => isDragging.value || !!draggingNode.value,
+});
+
 function targetDirectory(node?: FileNode): string | null {
   if (node?.is_dir) return node.path;
   if (node) return dirname(node.path);
@@ -76,27 +79,9 @@ function targetDirectory(node?: FileNode): string | null {
 }
 
 function moveNodeInMemory(sourcePath: string, targetDirectoryPath: string, newPath: string) {
-  const movedNode = removeNode(fileTree.value, sourcePath);
-  if (!movedNode) {
-    return;
-  }
-
-  updateNodePath(movedNode, sourcePath, newPath);
-
-  if (selectedProject.value?.path === targetDirectoryPath) {
-    fileTree.value.push(movedNode);
-    sortNodes(fileTree.value);
+  if (moveNode(fileTree.value, selectedProject.value?.path ?? null, sourcePath, targetDirectoryPath, newPath)) {
     fileTree.value = [...fileTree.value];
-    return;
   }
-
-  const targetNode = findNode(fileTree.value, targetDirectoryPath);
-  if (!targetNode || !targetNode.is_dir) return;
-
-  targetNode.children.push(movedNode);
-  targetNode.is_loaded = true;
-  sortNodes(targetNode.children);
-  fileTree.value = [...fileTree.value];
 }
 
 function focusTree() {
@@ -112,33 +97,6 @@ function selectFileNode(path: string) {
   activeNodePath.value = path;
   selectFile(path);
   focusTree();
-}
-
-function stopWatchingFileTree() {
-  if (refreshTimer) {
-    clearTimeout(refreshTimer);
-    refreshTimer = null;
-  }
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-  if (unwatchFileTree) {
-    unwatchFileTree();
-    unwatchFileTree = null;
-  }
-}
-
-async function refreshVisibleTree(force = false) {
-  if (isDragging.value || draggingNode.value) return;
-  if (!force && Date.now() < suppressRefreshUntil) return;
-  if (isRefreshing) return;
-  isRefreshing = true;
-  try {
-    await refreshFileTree(expandedDirs.value);
-  } finally {
-    isRefreshing = false;
-  }
 }
 
 const REFRESH_SPIN_MS = 650;
@@ -160,68 +118,9 @@ async function manualRefresh() {
   }
 }
 
-function scheduleRefresh(delay = 150) {
-  if (isDragging.value || draggingNode.value) return;
-  if (Date.now() < suppressRefreshUntil) return;
-  if (refreshTimer) clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => {
-    refreshVisibleTree();
-  }, delay);
-}
-
-function startPollingFileTree(intervalMs = 30000) {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(() => {
-    if (document.visibilityState === "visible") {
-      scheduleRefresh(0);
-    }
-  }, intervalMs);
-}
-
 async function requestName(title: string, defaultValue: string, actionLabel: string): Promise<string | null> {
   closeContextMenu();
-  resolveNameDialog?.(null);
-  nameDialogTitle.value = title;
-  nameDialogAction.value = actionLabel;
-  nameDialogValue.value = defaultValue;
-  nameDialogOpen.value = true;
-  return new Promise((resolve) => {
-    resolveNameDialog = resolve;
-  });
-}
-
-function settleNameDialog(value: string | null) {
-  const resolve = resolveNameDialog;
-  resolveNameDialog = null;
-  nameDialogOpen.value = false;
-  resolve?.(value);
-  focusTree();
-}
-
-function submitNameDialog() {
-  settleNameDialog(nameDialogValue.value);
-}
-
-function cancelNameDialog() {
-  settleNameDialog(null);
-}
-
-async function startWatchingFileTree(projectPath: string) {
-  stopWatchingFileTree();
-  try {
-    const { watch: watchFs } = await import("@tauri-apps/plugin-fs");
-    unwatchFileTree = await watchFs(
-      projectPath,
-      () => {
-        scheduleRefresh();
-      },
-      { recursive: true, delayMs: 250 }
-    );
-    startPollingFileTree(30000);
-  } catch {
-    unwatchFileTree = null;
-    startPollingFileTree(5000);
-  }
+  return (await namePrompt.value?.request(title, defaultValue, actionLabel)) ?? null;
 }
 
 watch(selectedProject, (project) => {
@@ -235,8 +134,6 @@ watch(selectedProject, (project) => {
     stopWatchingFileTree();
   }
 }, { immediate: true });
-
-onBeforeUnmount(stopWatchingFileTree);
 
 async function toggleDir(path: string) {
   if (expandedDirs.value.has(path)) {
@@ -360,7 +257,8 @@ async function requestDeleteNode(node: FileNode) {
 async function dropNodeIntoDirectory(targetDirectoryPath: string, sourcePath: string) {
   await runFileOperation(async () => {
     const newPath = await movePath(sourcePath, targetDirectoryPath);
-    suppressRefreshUntil = Date.now() + 12000;
+    // The tree already shows the move; a refresh racing the disk could briefly undo it.
+    suppressRefreshFor(12000);
     moveNodeInMemory(sourcePath, targetDirectoryPath, newPath);
     replaceExpandedPath(sourcePath, newPath);
     if (activeNodePath.value) {
@@ -483,16 +381,6 @@ function closeContextMenu() {
     >
       {{ draggingNode.name }}
     </div>
-    <ModalShell :open="nameDialogOpen" :title="nameDialogTitle" width="420px" @close="cancelNameDialog">
-      <form id="file-name-form" @submit.prevent="submitNameDialog">
-        <input v-model="nameDialogValue" class="field" spellcheck="false" />
-      </form>
-      <template #footer>
-        <button type="button" class="btn btn-ghost" @click="cancelNameDialog">{{ t('cancel') }}</button>
-        <button type="submit" form="file-name-form" class="btn btn-primary" :disabled="!nameDialogValue.trim()">
-          {{ nameDialogAction }}
-        </button>
-      </template>
-    </ModalShell>
+    <NamePromptDialog ref="namePrompt" @settled="focusTree" />
   </aside>
 </template>

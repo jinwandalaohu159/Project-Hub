@@ -31,7 +31,9 @@ pub(crate) async fn get_autostart_enabled() -> Result<bool, String> {
 
 #[tauri::command]
 pub(crate) async fn set_autostart_enabled(enabled: bool) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || set_enabled(enabled))
+    let result = tauri::async_runtime::spawn_blocking(move || set_enabled(enabled))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    let action = if enabled { "autostart.enable" } else { "autostart.disable" };
+    crate::logs::log_outcome(action, "", result)
 }

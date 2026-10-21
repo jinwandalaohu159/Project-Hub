@@ -293,10 +293,12 @@ async function discardDraft() {
         <div
           v-for="commit in commits"
           :key="commit.hash"
-          class="group pl-5 pr-4 py-2 border-b border-border/50 transition-colors"
+          class="group pl-5 pr-4 py-2 border-b border-l-2 border-border/50 transition-colors"
           :class="[
             restoringKey && restoringKey !== commit.hash ? 'opacity-50 pointer-events-none' : '',
-            commit.is_current ? 'bg-success/10 border-l-2 border-l-success cursor-default' : 'hover:bg-surface-raised cursor-pointer'
+            commit.is_current
+              ? 'bg-success/10 border-l-success cursor-default'
+              : 'border-l-transparent hover:bg-surface-raised cursor-pointer'
           ]"
           @click="restoreCommit(commit)"
           @contextmenu.prevent="openMenu($event, commit)"
@@ -329,10 +331,12 @@ async function discardDraft() {
               </div>
             </div>
             <Loader2 v-if="restoringKey === commit.hash" :size="14" class="mt-0.5 shrink-0 spin text-primary" />
+            <!-- The current record keeps the icon's space too, so every row lines up. -->
             <RotateCcw
-              v-else-if="!commit.is_current"
+              v-else
               :size="14"
-              class="mt-0.5 shrink-0 text-muted opacity-0 group-hover:opacity-100 transition-opacity"
+              class="mt-0.5 shrink-0 text-muted transition-opacity"
+              :class="commit.is_current ? 'invisible' : 'opacity-0 group-hover:opacity-100'"
             />
           </div>
         </div>
