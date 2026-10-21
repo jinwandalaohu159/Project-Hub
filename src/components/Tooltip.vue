@@ -92,7 +92,8 @@ onBeforeUnmount(() => {
   line-height: 1.4;
   white-space: nowrap;
   pointer-events: none;
-  z-index: 9999;
+  /* Above dialogs (10000) and dropdown lists (10001). */
+  z-index: 10002;
   letter-spacing: 0;
 }
 </style>

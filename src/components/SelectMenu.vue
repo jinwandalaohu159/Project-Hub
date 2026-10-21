@@ -2,6 +2,8 @@
 import { computed, nextTick, ref } from "vue";
 import { Check, ChevronDown } from "lucide-vue-next";
 import { useDismiss } from "../composables/useDismiss";
+import { useFollowAnchor } from "../composables/useFollowAnchor";
+import { choosePanelSide, panelPosition, type PanelSide } from "../utils/popupPlacement";
 
 /** A dropdown in the app's own style, instead of the system's <select>. */
 export interface SelectOption<V> {
@@ -29,7 +31,6 @@ defineSlots<{
   option?: (props: { option: SelectOption<T>; chosen: boolean }) => unknown;
 }>();
 
-const VIEWPORT_PADDING = 8;
 const MAX_PANEL_HEIGHT = 280;
 
 const triggerRef = ref<HTMLButtonElement | null>(null);
@@ -38,27 +39,21 @@ const open = ref(false);
 /** The option the keyboard is on. */
 const active = ref(-1);
 const panelStyle = ref<Record<string, string>>({});
+// Chosen when the list opens and kept while it follows a scrolling page, so it never flips sides.
+let side: PanelSide = { upward: false, maxHeight: MAX_PANEL_HEIGHT };
 
 const selected = computed(() => props.options.find((option) => option.value === model.value));
 
-/** Below the trigger and as wide as it, or above when there is no room below. */
+/** Lines the list up with the trigger on the side chosen when it opened. */
 function place() {
   const rect = triggerRef.value?.getBoundingClientRect();
-  if (!rect) return;
-  const below = window.innerHeight - rect.bottom - VIEWPORT_PADDING;
-  const above = rect.top - VIEWPORT_PADDING;
-  const upward = below < 160 && above > below;
-  const height = Math.min(MAX_PANEL_HEIGHT, upward ? above : below) - 4;
-  panelStyle.value = {
-    left: `${rect.left}px`,
-    width: `${rect.width}px`,
-    maxHeight: `${height}px`,
-    ...(upward ? { bottom: `${window.innerHeight - rect.top + 4}px` } : { top: `${rect.bottom + 4}px` }),
-  };
+  if (rect) panelStyle.value = panelPosition(rect, side);
 }
 
 async function show() {
   if (props.disabled || props.options.length === 0) return;
+  const rect = triggerRef.value?.getBoundingClientRect();
+  if (rect) side = choosePanelSide(rect, MAX_PANEL_HEIGHT);
   place();
   active.value = Math.max(0, props.options.findIndex((option) => option.value === model.value));
   open.value = true;
@@ -113,7 +108,15 @@ useDismiss({
   isOpen: () => open.value,
   isInside: (target) => !!(panelRef.value?.contains(target) || triggerRef.value?.contains(target)),
   onDismiss: close,
-  closeOnScrollAndBlur: true,
+  closeOnBlur: true,
+});
+
+// Scrolling the settings page moves the list along with its button rather than closing it.
+useFollowAnchor({
+  anchor: triggerRef,
+  isOpen: () => open.value,
+  onMove: place,
+  onHidden: close,
 });
 </script>
 
@@ -216,6 +219,8 @@ useDismiss({
   position: fixed;
   z-index: 10001;
   overflow-y: auto;
+  /* Reaching the end of the list does not hand the wheel over to the page behind. */
+  overscroll-behavior: contain;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface-overlay);

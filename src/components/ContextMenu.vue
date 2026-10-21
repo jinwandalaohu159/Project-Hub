@@ -38,7 +38,8 @@ useDismiss({
   isOpen: () => props.at !== null,
   isInside: (target) => menuRef.value?.contains(target) ?? false,
   onDismiss: () => emit("close"),
-  closeOnScrollAndBlur: true,
+  closeOnScroll: true,
+  closeOnBlur: true,
 });
 </script>
 

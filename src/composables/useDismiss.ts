@@ -8,8 +8,10 @@ export interface DismissOptions {
   onDismiss: () => void;
   /** Return false to keep the popup open for now (e.g. while it is busy). */
   canDismiss?: () => boolean;
-  /** Also close when the page scrolls or the window loses focus (floating menus). */
-  closeOnScrollAndBlur?: boolean;
+  /** Also close when something outside the popup scrolls (context menus). */
+  closeOnScroll?: boolean;
+  /** Also close when the window loses focus (floating menus). */
+  closeOnBlur?: boolean;
 }
 
 const MODAL_SELECTOR = ".modal-backdrop";
@@ -35,23 +37,28 @@ export function useDismiss(options: DismissOptions) {
     options.onDismiss();
   }
 
-  function onScrollOrBlur() {
+  function onScroll(event: Event) {
+    // Scrolling the popup's own list is using it, not leaving it.
+    const target = event.target;
+    if (target instanceof Element && options.isInside(target)) return;
+    if (active()) options.onDismiss();
+  }
+
+  function onBlur() {
     if (active()) options.onDismiss();
   }
 
   onMounted(() => {
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeydown);
-    if (options.closeOnScrollAndBlur) {
-      document.addEventListener("scroll", onScrollOrBlur, true);
-      window.addEventListener("blur", onScrollOrBlur);
-    }
+    if (options.closeOnScroll) document.addEventListener("scroll", onScroll, true);
+    if (options.closeOnBlur) window.addEventListener("blur", onBlur);
   });
 
   onBeforeUnmount(() => {
     document.removeEventListener("pointerdown", onPointerDown, true);
     document.removeEventListener("keydown", onKeydown);
-    document.removeEventListener("scroll", onScrollOrBlur, true);
-    window.removeEventListener("blur", onScrollOrBlur);
+    document.removeEventListener("scroll", onScroll, true);
+    window.removeEventListener("blur", onBlur);
   });
 }

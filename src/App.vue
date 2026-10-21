@@ -13,6 +13,7 @@ import CodeViewer from './components/CodeViewer.vue'
 import PanelResizer from './components/PanelResizer.vue'
 import CollapsiblePanel from './components/CollapsiblePanel.vue'
 import SettingsOverlay from './components/SettingsOverlay.vue'
+import GuideHost from './components/guide/GuideHost.vue'
 import ToastHost from './components/ToastHost.vue'
 import ConfirmHost from './components/ConfirmHost.vue'
 import GithubLoginDialog from './components/GithubLoginDialog.vue'
@@ -177,6 +178,9 @@ onUnmounted(() => {
     >
       <CodeViewer />
     </CollapsiblePanel>
+
+    <!-- User guide: centered over the app, or docked here as a column on the right. -->
+    <GuideHost @open-settings="showSettings = true" />
 
     <!-- Settings overlay -->
     <Transition name="settings">

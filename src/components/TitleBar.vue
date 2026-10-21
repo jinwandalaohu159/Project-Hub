@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { ArrowDownToLine, Copy, Loader2, Minus, Settings, Square, X } from 'lucide-vue-next'
+import { ArrowDownToLine, BookOpen, Copy, Loader2, Minus, Settings, Square, X } from 'lucide-vue-next'
 import Tooltip from './Tooltip.vue'
 import { useI18n } from '../composables/useI18n'
 import { useWindowState } from '../composables/useWindowState'
 import { useUpdater } from '../composables/useUpdater'
+import { useGuide } from '../composables/useGuide'
 import { isMac, isTauri } from '../utils/env'
 
 defineProps<{
@@ -24,6 +25,7 @@ const mac = isMac()
 const showWindowControls = isTauri() && !mac
 const { maximized, fullscreen } = useWindowState()
 const { info, available, installing, phase, progress, dialogOpen } = useUpdater()
+const guide = useGuide()
 
 function minimize() {
   getCurrentWindow().minimize()
@@ -53,6 +55,11 @@ function closeWindow() {
           <span>{{
             phase === 'restarting' ? t('updateRestartingShort') : installing ? `${Math.round(progress * 100)}%` : t('updateButton')
           }}</span>
+        </button>
+      </Tooltip>
+      <Tooltip :text="t('guide')" position="bottom">
+        <button class="title-bar-btn" :class="{ active: guide.open.value }" @click="guide.toggle()">
+          <BookOpen :size="15" />
         </button>
       </Tooltip>
       <Tooltip :text="t('settings')" position="bottom">

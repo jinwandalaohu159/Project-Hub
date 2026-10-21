@@ -5,13 +5,14 @@ import { useI18n } from "../composables/useI18n";
 import { useConfirm } from "../composables/useConfirm";
 import { useToast } from "../composables/useToast";
 import { usePersistentRef, clamp } from "../composables/usePersistentRef";
+import { useGuide } from "../composables/useGuide";
 import GitStatusPanel from "./GitStatusPanel.vue";
 import VersionList from "./VersionList.vue";
 import CommitLogPanel from "./CommitLogPanel.vue";
 import CloudSyncButton from "./CloudSyncButton.vue";
 import CloudDownloadButton from "./CloudDownloadButton.vue";
 import PanelResizer from "./PanelResizer.vue";
-import { FolderSearch, Search, TriangleAlert, X } from "lucide-vue-next";
+import { BookOpen, FolderSearch, Search, TriangleAlert, X } from "lucide-vue-next";
 import Tooltip from "./Tooltip.vue";
 import type { Project } from "../types";
 
@@ -33,6 +34,7 @@ const {
 const { t } = useI18n();
 const { confirm } = useConfirm();
 const toast = useToast();
+const guide = useGuide();
 
 const projectQuery = ref("");
 const branchQuery = ref("");
@@ -124,6 +126,9 @@ function onProjectListResize(dy: number) {
       </div>
       <div v-else-if="projects.length === 0" class="flex flex-col items-center justify-center py-8 px-4">
         <span class="font-serif text-[22px] font-semibold text-muted leading-tight">{{ t('noProjects') }}</span>
+        <button class="btn btn-ghost btn-sm mt-3" @click="guide.show('quickStart')">
+          <BookOpen :size="14" />{{ t('guideNewHere') }}
+        </button>
       </div>
       <template v-else>
         <div class="px-5 py-1.5 border-b border-border-subtle">
