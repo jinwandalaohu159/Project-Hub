@@ -23,11 +23,27 @@ pub fn store_token(token: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    fs::write(path, protect(token.as_bytes())?).map_err(|e| e.to_string())
+    fs::write(&path, protect(token.as_bytes())?).map_err(|e| e.to_string())?;
+    restrict_to_owner(&path)
+}
+
+/// Outside Windows the token is not encrypted, so at least no other account may read it.
+#[cfg(unix)]
+fn restrict_to_owner(path: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())
+}
+
+#[cfg(not(unix))]
+fn restrict_to_owner(_path: &std::path::Path) -> Result<(), String> {
+    Ok(())
 }
 
 pub fn load_token() -> Option<String> {
-    let bytes = fs::read(token_path()).ok()?;
+    let path = token_path();
+    // Files written by older versions were readable by everyone.
+    let _ = restrict_to_owner(&path);
+    let bytes = fs::read(&path).ok()?;
     let token = String::from_utf8(unprotect(&bytes).ok()?).ok()?;
     let token = token.trim().to_string();
     (!token.is_empty()).then_some(token)
@@ -72,7 +88,7 @@ fn api_error(error: ureq::Error) -> String {
                     Some(format!("{base}{detail}"))
                 })
                 .unwrap_or(body);
-            format!("GitHub error {code}: {message}")
+            format!("GITHUB_API_ERROR:{code} {message}")
         }
         ureq::Error::Transport(transport) => format!("Cannot reach GitHub: {transport}"),
     }

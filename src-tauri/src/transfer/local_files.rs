@@ -65,9 +65,11 @@ pub fn collect(root: &Path, is_git_repo: bool, git: &GitService) -> Result<Vec<S
         if relative.split('/').any(|part| REGENERABLE_DIRS.contains(&part)) {
             continue;
         }
-        if path.ends_with('/') {
+        // Not through links: they may lead anywhere on the computer.
+        let Ok(meta) = fs::symlink_metadata(root.join(relative)) else { continue };
+        if meta.is_dir() {
             walk(&root.join(relative), relative, &mut files)?;
-        } else if !relative.rsplit('/').next().is_some_and(is_junk) && root.join(relative).is_file() {
+        } else if meta.is_file() && !relative.rsplit('/').next().is_some_and(is_junk) {
             files.insert(relative.to_string());
         }
     }
@@ -126,16 +128,22 @@ fn inside(root: &Path, path: &str) -> Option<PathBuf> {
     (plain && !path.is_empty() && !path.contains('\\')).then(|| root.join(relative))
 }
 
-/// Puts the files back under `root`. A file that already exists there is kept as it is, so an
-/// import never overwrites what is on the new computer.
+/// Puts the files back under `root`. Anything already at a file's place, a link included, is kept
+/// as it is, so an import never overwrites what is on the new computer nor writes through a link.
 pub fn restore(archive: &mut ZipArchive<File>, project_id: &str, root: &Path, files: &[String]) -> Result<(), String> {
+    let real_root = fs::canonicalize(root).map_err(|e| format!("FILE_ERROR:{e}"))?;
     for path in files {
         let dest = inside(root, path).ok_or_else(|| format!("EXPORT_DAMAGED:{path}"))?;
-        if dest.exists() {
+        if fs::symlink_metadata(&dest).is_ok() {
             continue;
         }
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            // A folder on the way may be a link out of the project.
+            let real_parent = fs::canonicalize(parent).map_err(|e| format!("FILE_ERROR:{e}"))?;
+            if !real_parent.starts_with(&real_root) {
+                return Err(format!("LOCAL_FILE_OUTSIDE:{path}"));
+            }
         }
         let mut entry = archive
             .by_name(&entry_name(project_id, path))
@@ -164,6 +172,42 @@ mod tests {
         assert_eq!(inside(root, "/etc/passwd"), None);
         assert_eq!(inside(root, "a\\..\\..\\b"), None);
         assert_eq!(inside(root, ""), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_are_neither_packed_nor_written_through() {
+        use std::os::unix::fs::symlink;
+        let outside = tempfile::TempDir::new().unwrap();
+        fs::write(outside.path().join("secret.txt"), "outside").unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git").args(args).current_dir(root).output().unwrap();
+        };
+        git(&["init", "-q"]);
+        fs::write(root.join(".gitignore"), ".env\nlinked.txt\nlinked-dir\n").unwrap();
+        fs::write(root.join(".env"), "KEY=1").unwrap();
+        git(&["add", ".gitignore"]);
+        git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "i"]);
+        symlink(outside.path().join("secret.txt"), root.join("linked.txt")).unwrap();
+        symlink(outside.path(), root.join("linked-dir")).unwrap();
+        assert_eq!(collect(root, true, &GitService::new()).unwrap(), vec![".env"]);
+        assert_eq!(collect(root, false, &GitService::new()).unwrap(), vec![".env", ".gitignore"]);
+
+        // Importing into a folder whose subfolder links elsewhere must not write there.
+        let package_dir = tempfile::TempDir::new().unwrap();
+        let package = package_dir.path().join("p.zip");
+        let mut zip = ZipWriter::new(File::create(&package).unwrap());
+        zip.start_file("files/p/conf/key.pem", SimpleFileOptions::default()).unwrap();
+        zip.write_all(b"key").unwrap();
+        zip.finish().unwrap();
+        let target = tempfile::TempDir::new().unwrap();
+        symlink(outside.path(), target.path().join("conf")).unwrap();
+        let mut archive = ZipArchive::new(File::open(&package).unwrap()).unwrap();
+        let error = restore(&mut archive, "p", target.path(), &["conf/key.pem".to_string()]).unwrap_err();
+        assert_eq!(error, "LOCAL_FILE_OUTSIDE:conf/key.pem");
+        assert!(!outside.path().join("key.pem").exists());
     }
 
     #[test]
