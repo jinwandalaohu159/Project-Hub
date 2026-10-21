@@ -2,7 +2,7 @@
 
 use super::git::{identity_of, run_git_task};
 use super::preferences::update_settings;
-use crate::{credential_manager, github, settings, AppState};
+use crate::{github, github_login, settings, AppState};
 use git_service::GitService;
 use tauri::Manager;
 
@@ -10,25 +10,33 @@ pub(crate) fn require_token() -> Result<String, String> {
     github::load_token().ok_or_else(|| "GITHUB_NOT_SIGNED_IN".to_string())
 }
 
-pub(crate) fn finish_login(app: &tauri::AppHandle, token: &str, via_browser: bool) -> Result<settings::GithubAccount, String> {
+pub(crate) fn finish_login(app: &tauri::AppHandle, token: &str) -> Result<settings::GithubAccount, String> {
     let account = github::fetch_user(token)?;
     github::store_token(token)?;
     let state = app.state::<AppState>();
-    update_settings(&state, |settings| {
-        settings.github = Some(account.clone());
-        settings.github_via_browser = via_browser;
-    })?;
+    update_settings(&state, |settings| settings.github = Some(account.clone()))?;
     Ok(account)
 }
 
+/// Starts a browser sign-in and returns the code the user enters on github.com.
 #[tauri::command]
-pub(crate) async fn github_login_browser(app: tauri::AppHandle) -> Result<settings::GithubAccount, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let token = credential_manager::browser_login()?;
-        finish_login(&app, &token, true)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+pub(crate) async fn github_browser_login_start() -> Result<github_login::DeviceCode, String> {
+    tauri::async_runtime::spawn_blocking(github_login::start)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Waits until the user has approved the code from `github_browser_login_start`, then signs in.
+#[tauri::command]
+pub(crate) async fn github_browser_login_finish(app: tauri::AppHandle) -> Result<settings::GithubAccount, String> {
+    tauri::async_runtime::spawn_blocking(move || finish_login(&app, &github_login::wait_for_token()?))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub(crate) fn github_browser_login_cancel() {
+    github_login::cancel();
 }
 
 #[tauri::command]
@@ -37,7 +45,7 @@ pub(crate) async fn github_login_token(app: tauri::AppHandle, token: String) -> 
     if token.is_empty() {
         return Err("GITHUB_TOKEN_EMPTY".to_string());
     }
-    tauri::async_runtime::spawn_blocking(move || finish_login(&app, &token, false))
+    tauri::async_runtime::spawn_blocking(move || finish_login(&app, &token))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -46,15 +54,8 @@ pub(crate) async fn github_login_token(app: tauri::AppHandle, token: String) -> 
 pub(crate) async fn github_logout(app: tauri::AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let (previous, _) = update_settings(&state, |settings| {
-            let via_browser = std::mem::take(&mut settings.github_via_browser);
-            settings.github.take().map(|account| (account, via_browser))
-        })?;
+        update_settings(&state, |settings| settings.github = None)?;
         github::delete_token();
-        // A pasted token never touched the shared git credential store; leave other tools signed in.
-        if let Some((account, true)) = previous {
-            credential_manager::forget_browser_login(&account.login);
-        }
         Ok(())
     })
     .await

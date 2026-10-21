@@ -251,7 +251,7 @@ impl GitService {
     /// first record when missing. Does nothing for a folder that is already set up.
     pub fn ensure_versioned(&self, repo_path: &str) -> Result<VersioningOutcome, String> {
         if !Path::new(repo_path).is_dir() {
-            return Err(format!("Project folder not found: {}", repo_path));
+            return Err(format!("PROJECT_FOLDER_MISSING:{repo_path}"));
         }
         let initialized = !self.is_git_repo(repo_path);
         if initialized {

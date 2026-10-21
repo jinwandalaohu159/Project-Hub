@@ -49,13 +49,13 @@ impl ProjectService {
     pub fn add_project_with_id(&mut self, path: &str, id: Option<&str>) -> Result<Project, String> {
         let dir = Path::new(path);
         if !dir.exists() {
-            return Err(format!("Path does not exist: {}", path));
+            return Err(format!("PATH_NOT_FOUND:{path}"));
         }
         if !dir.is_dir() {
-            return Err(format!("Path is not a directory: {}", path));
+            return Err(format!("NOT_A_FOLDER:{path}"));
         }
         if self.projects.iter().any(|p| same_path(&p.path, path)) {
-            return Err(format!("Project already exists: {}", path));
+            return Err(format!("PROJECT_EXISTS:{path}"));
         }
 
         let id = match id {
@@ -118,14 +118,14 @@ impl ProjectService {
     pub fn relocate_project(&mut self, id: &str, new_path: &str) -> Result<Project, String> {
         let dir = Path::new(new_path);
         if !dir.is_dir() {
-            return Err(format!("Path is not a directory: {}", new_path));
+            return Err(format!("NOT_A_FOLDER:{new_path}"));
         }
         if self
             .projects
             .iter()
             .any(|p| p.id != id && same_path(&p.path, new_path))
         {
-            return Err(format!("Another project already uses this folder: {}", new_path));
+            return Err(format!("FOLDER_IN_USE:{new_path}"));
         }
         let project = self
             .projects
@@ -298,7 +298,7 @@ mod tests {
         let mut svc = ProjectService::new(&storage);
         let result = svc.add_project("/nonexistent/path");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("does not exist"));
+        assert!(result.unwrap_err().starts_with("PATH_NOT_FOUND:"));
     }
 
     #[test]
@@ -311,7 +311,7 @@ mod tests {
         svc.add_project(project_path).unwrap();
         let result = svc.add_project(project_path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("already exists"));
+        assert!(result.unwrap_err().starts_with("PROJECT_EXISTS:"));
     }
 
     #[test]

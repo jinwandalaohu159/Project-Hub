@@ -2,7 +2,10 @@ import { computed, ref, type Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { usePersistentRef } from "./usePersistentRef";
+import { useToast } from "./useToast";
+import { useI18n } from "./useI18n";
 import { isTauri } from "../utils/env";
+import { errorText } from "../utils/errors";
 
 export interface UpdateInfo {
   current: string;
@@ -16,7 +19,10 @@ export interface UpdateInfo {
   asset_size: number;
 }
 
-const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** Checks are cheap (see update/check.rs), so a new release shows up within minutes. */
+const AUTO_CHECK_INTERVAL_MS = 2 * 60 * 1000;
+/** Coming back to the window checks right away, unless a check just ran. */
+const FOCUS_CHECK_MIN_GAP_MS = 30 * 1000;
 
 const currentVersion = ref("");
 const releasesUrl = ref("");
@@ -26,7 +32,9 @@ const installing = ref(false);
 const downloaded = ref(0);
 const total = ref(0);
 const lastChecked = ref<number | null>(null);
+const dialogOpen = ref(false);
 let autoTimer: ReturnType<typeof setInterval> | null = null;
+let onFocus: (() => void) | null = null;
 let started = false;
 let prefs: { autoCheck: Ref<boolean>; dismissedVersion: Ref<string> } | null = null;
 
@@ -84,25 +92,41 @@ export function useUpdater() {
     }
   }
 
+  /** Installs the available update, reporting a failure; on success the app quits and reopens. */
+  async function installNow() {
+    try {
+      await install();
+    } catch (error) {
+      const { t } = useI18n();
+      useToast().error(errorText(error, t), { detail: t("updateFailed") });
+    }
+  }
+
   function dismiss() {
     if (info.value) dismissedVersion.value = info.value.latest;
   }
 
-  /** Quiet background checks: shortly after start, then every few hours. */
+  /** Quiet background checks: shortly after start, every few minutes, and on returning to the window. */
   function startAutoCheck() {
     if (started) return;
     started = true;
     loadVersion().catch(() => undefined);
     const quietCheck = () => {
-      if (autoCheck.value) check().catch(() => undefined);
+      if (autoCheck.value && !installing.value) check().catch(() => undefined);
     };
     setTimeout(quietCheck, 5000);
     autoTimer = setInterval(quietCheck, AUTO_CHECK_INTERVAL_MS);
+    onFocus = () => {
+      if (Date.now() - (lastChecked.value ?? 0) >= FOCUS_CHECK_MIN_GAP_MS) quietCheck();
+    };
+    window.addEventListener("focus", onFocus);
   }
 
   function stopAutoCheck() {
     if (autoTimer) clearInterval(autoTimer);
     autoTimer = null;
+    if (onFocus) window.removeEventListener("focus", onFocus);
+    onFocus = null;
     started = false;
   }
 
@@ -117,11 +141,13 @@ export function useUpdater() {
     progress,
     lastChecked,
     autoCheck,
+    dialogOpen,
     available,
     showBanner,
     loadVersion,
     check,
     install,
+    installNow,
     dismiss,
     startAutoCheck,
     stopAutoCheck,

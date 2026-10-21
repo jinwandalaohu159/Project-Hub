@@ -230,23 +230,23 @@ fn is_safe_id(id: &str) -> bool {
 
 fn open_package(path: &Path) -> Result<(ZipArchive<File>, ExportManifest), String> {
     let file = File::open(path).map_err(|e| format!("Cannot open the package: {e}"))?;
-    let mut archive = ZipArchive::new(file).map_err(|_| "This file is not a Project Hub export.".to_string())?;
+    let mut archive = ZipArchive::new(file).map_err(|_| "EXPORT_NOT_PROJECT_HUB".to_string())?;
     let mut content = String::new();
     archive
         .by_name(MANIFEST)
-        .map_err(|_| "This file is not a Project Hub export.".to_string())?
+        .map_err(|_| "EXPORT_NOT_PROJECT_HUB".to_string())?
         .read_to_string(&mut content)
         .map_err(|e| e.to_string())?;
     let manifest: ExportManifest =
-        serde_json::from_str(&content).map_err(|_| "The export manifest is damaged.".to_string())?;
+        serde_json::from_str(&content).map_err(|_| "EXPORT_DAMAGED".to_string())?;
     if manifest.format != FORMAT {
-        return Err("This file is not a Project Hub export.".to_string());
+        return Err("EXPORT_NOT_PROJECT_HUB".to_string());
     }
     if manifest.version > FORMAT_VERSION {
-        return Err("This export was made by a newer Project Hub. Please update first.".to_string());
+        return Err("EXPORT_TOO_NEW".to_string());
     }
     if !manifest.projects.iter().all(|project| is_safe_id(&project.id)) {
-        return Err("The export manifest is damaged.".to_string());
+        return Err("EXPORT_DAMAGED".to_string());
     }
     Ok((archive, manifest))
 }
@@ -317,7 +317,7 @@ fn import_one(
             let _ = fs::remove_file(&bundle_path);
         }
         (None, TargetState::Missing) => {
-            return Err("The export has no files for this project and the folder does not exist.".to_string());
+            return Err("EXPORT_NO_FILES".to_string());
         }
         (None, _) => {}
     }

@@ -1,7 +1,7 @@
 mod autostart;
 mod commands;
-mod credential_manager;
 mod github;
+mod github_login;
 mod logs;
 mod mcp;
 mod settings;
@@ -162,7 +162,9 @@ pub fn run() {
             commands::git::git_init,
             commands::git::is_git_repo,
             commands::projects::ensure_project_versioned,
-            commands::cloud::github_login_browser,
+            commands::cloud::github_browser_login_start,
+            commands::cloud::github_browser_login_finish,
+            commands::cloud::github_browser_login_cancel,
             commands::cloud::github_login_token,
             commands::cloud::github_logout,
             commands::cloud::github_list_repos,

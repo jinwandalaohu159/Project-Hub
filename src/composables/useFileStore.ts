@@ -24,10 +24,10 @@ const IGNORED_FILES = new Set([KEEP_FILE_NAME]);
 const INVALID_WINDOWS_NAME_CHARS = /[\\/:*?"<>|]/;
 
 function validateEntryName(name: string) {
-  if (!name.trim()) throw new Error("Name cannot be empty.");
-  if (name !== name.trim()) throw new Error("Name cannot start or end with spaces.");
+  if (!name.trim()) throw new Error("NAME_EMPTY");
+  if (name !== name.trim()) throw new Error("NAME_SPACES");
   if (INVALID_WINDOWS_NAME_CHARS.test(name)) {
-    throw new Error('Name cannot contain \\ / : * ? " < > |');
+    throw new Error("NAME_INVALID_CHARS");
   }
 }
 
@@ -183,7 +183,7 @@ export function useFileStore() {
     validateEntryName(name);
     const newPath = joinPath(parentPath, name);
     const { exists, writeTextFile } = await import("@tauri-apps/plugin-fs");
-    if (await exists(newPath)) throw new Error("A file or folder with that name already exists.");
+    if (await exists(newPath)) throw new Error("NAME_TAKEN");
     await writeTextFile(newPath, "", { createNew: true });
     await syncDirectoryMarker(parentPath);
     selectedFilePath.value = newPath;
@@ -194,7 +194,7 @@ export function useFileStore() {
     validateEntryName(name);
     const newPath = joinPath(parentPath, name);
     const { exists, mkdir } = await import("@tauri-apps/plugin-fs");
-    if (await exists(newPath)) throw new Error("A file or folder with that name already exists.");
+    if (await exists(newPath)) throw new Error("NAME_TAKEN");
     await mkdir(newPath);
     await syncDirectoryMarker(newPath);
     await syncDirectoryMarker(parentPath);
@@ -210,7 +210,7 @@ export function useFileStore() {
     const { exists, rename } = await import("@tauri-apps/plugin-fs");
     // Windows paths are case-insensitive: "readme.md" -> "README.md" must go through a temporary name.
     const caseOnly = newPath.toLowerCase() === path.toLowerCase();
-    if (!caseOnly && (await exists(newPath))) throw new Error("A file or folder with that name already exists.");
+    if (!caseOnly && (await exists(newPath))) throw new Error("NAME_TAKEN");
     if (caseOnly) {
       const temporary = `${path}.ph-rename-${Date.now()}`;
       await rename(path, temporary);
@@ -228,8 +228,8 @@ export function useFileStore() {
   }
 
   async function movePath(path: string, targetDirectoryPath: string): Promise<string> {
-    if (path === targetDirectoryPath) throw new Error("Cannot move an item into itself.");
-    if (isChildPath(targetDirectoryPath, path)) throw new Error("Cannot move a folder into its own child folder.");
+    if (path === targetDirectoryPath) throw new Error("MOVE_INTO_SELF");
+    if (isChildPath(targetDirectoryPath, path)) throw new Error("MOVE_INTO_CHILD");
 
     const name = basename(path);
     const currentParentPath = dirname(path);
@@ -237,7 +237,7 @@ export function useFileStore() {
     if (currentParentPath === targetDirectoryPath || newPath === path) return path;
 
     const { exists, rename } = await import("@tauri-apps/plugin-fs");
-    if (await exists(newPath)) throw new Error("A file or folder with that name already exists.");
+    if (await exists(newPath)) throw new Error("NAME_TAKEN");
     await rename(path, newPath);
     await syncDirectoryMarker(currentParentPath);
     await syncDirectoryMarker(targetDirectoryPath);

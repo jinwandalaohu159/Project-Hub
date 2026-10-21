@@ -1,29 +1,10 @@
 <script setup lang="ts">
-import { ref } from "vue";
 import { Download, Loader2, Sparkles, X } from "lucide-vue-next";
-import ModalShell from "./ModalShell.vue";
 import { useUpdater } from "../composables/useUpdater";
-import { useToast } from "../composables/useToast";
 import { useI18n } from "../composables/useI18n";
-import { errorText } from "../utils/errors";
 
-const { info, currentVersion, showBanner, installing, progress, install, dismiss } = useUpdater();
-const toast = useToast();
+const { info, currentVersion, showBanner, installing, progress, dialogOpen, installNow, dismiss } = useUpdater();
 const { t } = useI18n();
-const showNotes = ref(false);
-
-function formatSize(bytes: number) {
-  return bytes > 0 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : "";
-}
-
-async function update() {
-  showNotes.value = false;
-  try {
-    await install();
-  } catch (error) {
-    toast.error(errorText(error, t), { detail: t("updateFailed") });
-  }
-}
 </script>
 
 <template>
@@ -34,7 +15,7 @@ async function update() {
         {{ t('updateAvailable', { version: info.latest }) }}
         <span class="text-muted">{{ t('updateCurrent', { version: currentVersion || info.current }) }}</span>
       </span>
-      <button v-if="info.notes && !installing" class="banner-link" @click="showNotes = true">{{ t('updateWhatsNew') }}</button>
+      <button v-if="info.notes && !installing" class="banner-link" @click="dialogOpen = true">{{ t('updateWhatsNew') }}</button>
       <div class="flex-1" />
       <template v-if="installing">
         <div class="banner-progress"><span :style="{ transform: `scaleX(${progress})` }" /></div>
@@ -43,28 +24,13 @@ async function update() {
       </template>
       <template v-else>
         <button class="btn btn-ghost btn-sm" @click="dismiss">{{ t('updateLater') }}</button>
-        <button class="btn btn-primary btn-sm" @click="update">
+        <button class="btn btn-primary btn-sm" @click="installNow">
           <Download :size="13" />{{ t('updateNow') }}
         </button>
         <button class="banner-close" :title="t('close')" @click="dismiss"><X :size="14" /></button>
       </template>
     </div>
   </Transition>
-
-  <ModalShell
-    :open="showNotes"
-    :title="t('updateNotesTitle', { version: info?.latest ?? '' })"
-    :subtitle="info?.published_at ? new Date(info.published_at).toLocaleString() : undefined"
-    width="520px"
-    @close="showNotes = false"
-  >
-    <p class="whitespace-pre-line break-words text-sm leading-6 text-ink">{{ info?.notes }}</p>
-    <template #footer>
-      <span class="mr-auto self-center text-[11px] text-text-muted">{{ formatSize(info?.asset_size ?? 0) }}</span>
-      <button class="btn btn-ghost" @click="showNotes = false">{{ t('close') }}</button>
-      <button class="btn btn-primary" @click="update"><Download :size="14" />{{ t('updateNow') }}</button>
-    </template>
-  </ModalShell>
 </template>
 
 <style scoped>

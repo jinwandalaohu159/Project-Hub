@@ -1,6 +1,6 @@
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { GithubAccount, SettingsView } from "../types";
+import type { DeviceCode, GithubAccount, SettingsView } from "../types";
 import { isTauri } from "../utils/env";
 
 const settings = ref<SettingsView | null>(null);
@@ -27,10 +27,19 @@ export function useAccount() {
     return loaded;
   }
 
-  async function loginWithBrowser() {
-    account.value = await invoke<GithubAccount>("github_login_browser");
+  /** Gets the code the user enters on github.com; `finishBrowserLogin` then waits for their approval. */
+  function startBrowserLogin() {
+    return invoke<DeviceCode>("github_browser_login_start");
+  }
+
+  async function finishBrowserLogin() {
+    account.value = await invoke<GithubAccount>("github_browser_login_finish");
     await refresh();
     return account.value;
+  }
+
+  function cancelBrowserLogin() {
+    return invoke("github_browser_login_cancel");
   }
 
   async function loginWithToken(token: string) {
@@ -75,7 +84,9 @@ export function useAccount() {
     loginDialogOpen,
     refresh,
     ensureLoaded,
-    loginWithBrowser,
+    startBrowserLogin,
+    finishBrowserLogin,
+    cancelBrowserLogin,
     loginWithToken,
     logout,
     updateAuthor,

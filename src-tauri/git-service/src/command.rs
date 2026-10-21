@@ -73,7 +73,7 @@ impl GitService {
         input: &str,
     ) -> Result<String, String> {
         if !Path::new(repo_path).is_dir() {
-            return Err(format!("Project folder not found: {}", repo_path));
+            return Err(format!("PROJECT_FOLDER_MISSING:{repo_path}"));
         }
         let mut child = self
             .base_command(repo_path, args, envs)
@@ -112,7 +112,7 @@ impl GitService {
         envs: &[(&str, &str)],
     ) -> Result<String, String> {
         if !Path::new(repo_path).is_dir() {
-            return Err(format!("Project folder not found: {}", repo_path));
+            return Err(format!("PROJECT_FOLDER_MISSING:{repo_path}"));
         }
         let output = self
             .base_command(repo_path, args, envs)

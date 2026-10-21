@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { Bug, Copy, Minus, Settings, Square, X } from 'lucide-vue-next'
+import { ArrowDownToLine, Bug, Copy, Loader2, Minus, Settings, Square, X } from 'lucide-vue-next'
 import Tooltip from './Tooltip.vue'
 import { useI18n } from '../composables/useI18n'
 import { useWindowState } from '../composables/useWindowState'
+import { useUpdater } from '../composables/useUpdater'
 import { isMac, isTauri } from '../utils/env'
 
 defineProps<{
   devPanelOpen: boolean
   settingsOpen: boolean
-  updateAvailable: boolean
 }>()
 
 const emit = defineEmits<{
@@ -25,6 +25,7 @@ const { t } = useI18n()
 const mac = isMac()
 const showWindowControls = isTauri() && !mac
 const { maximized, fullscreen } = useWindowState()
+const { info, available, installing, progress, dialogOpen } = useUpdater()
 
 function minimize() {
   getCurrentWindow().minimize()
@@ -47,6 +48,13 @@ function closeWindow() {
     <div class="flex-1 self-stretch" data-tauri-drag-region />
 
     <div class="title-bar-actions">
+      <Tooltip v-if="available && info" :text="t('updateAvailable', { version: info.latest })" position="bottom">
+        <button class="title-bar-update" @click="dialogOpen = true">
+          <Loader2 v-if="installing" :size="13" class="spin" />
+          <ArrowDownToLine v-else :size="13" />
+          <span>{{ installing ? `${Math.round(progress * 100)}%` : t('updateButton') }}</span>
+        </button>
+      </Tooltip>
       <Tooltip :text="t('debugPanel')" position="bottom">
         <button class="title-bar-btn" :class="{ active: devPanelOpen }" @click="emit('toggleDevPanel')">
           <Bug :size="15" />
@@ -55,7 +63,6 @@ function closeWindow() {
       <Tooltip :text="t('settings')" position="bottom">
         <button class="title-bar-btn" :class="{ active: settingsOpen }" @click="emit('openSettings')">
           <Settings :size="15" />
-          <span v-if="updateAvailable" class="title-bar-dot" />
         </button>
       </Tooltip>
     </div>
@@ -131,20 +138,29 @@ function closeWindow() {
   color: var(--color-ink);
 }
 
+.title-bar-update {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin-right: 4px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  padding: 0 10px 0 8px;
+  color: var(--color-on-primary);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-fast, 120ms) ease;
+}
+
+.title-bar-update:hover {
+  background: var(--color-primary-hover);
+}
+
 .title-bar-btn.active {
   background: var(--color-surface-raised);
   color: var(--color-primary);
-}
-
-.title-bar-dot {
-  position: absolute;
-  top: 3px;
-  right: 5px;
-  width: 7px;
-  height: 7px;
-  border: 1.5px solid var(--color-canvas);
-  border-radius: 50%;
-  background: var(--color-primary);
 }
 
 .window-controls {

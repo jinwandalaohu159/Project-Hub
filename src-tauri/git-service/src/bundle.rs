@@ -42,7 +42,7 @@ impl GitService {
         // An existing repository without any record holds nothing worth keeping; import into it.
         let had_git = target.join(".git").exists();
         if had_git && self.has_commits(&repo) {
-            return Err("The target folder already has version history.".to_string());
+            return Err("TARGET_HAS_HISTORY".to_string());
         }
         let was_empty = fs::read_dir(target)
             .map_err(|e| format!("Failed to read folder: {}", e))?

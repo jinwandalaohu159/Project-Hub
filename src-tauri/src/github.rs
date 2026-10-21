@@ -55,7 +55,7 @@ fn request(method: &str, path: &str, token: &str) -> ureq::Request {
 
 fn api_error(error: ureq::Error) -> String {
     match error {
-        ureq::Error::Status(401, _) => "GitHub rejected the sign-in (token invalid or expired).".to_string(),
+        ureq::Error::Status(401, _) => "GITHUB_UNAUTHORIZED".to_string(),
         ureq::Error::Status(code, response) => {
             let body = response.into_string().unwrap_or_default();
             let message = serde_json::from_str::<serde_json::Value>(&body)
@@ -115,7 +115,7 @@ pub fn is_github_https(url: &str) -> bool {
 pub fn normalize_repo_url(input: &str) -> Result<String, String> {
     let value = input.trim().trim_end_matches('/');
     if value.is_empty() {
-        return Err("Repository address is empty.".to_string());
+        return Err("REPO_URL_EMPTY".to_string());
     }
     if let Some(rest) = value.strip_prefix("git@github.com:") {
         return Ok(format!("https://github.com/{}", with_git_suffix(rest)));
@@ -127,7 +127,7 @@ pub fn normalize_repo_url(input: &str) -> Result<String, String> {
     if parts.len() == 2 && parts.iter().all(|part| !part.is_empty()) {
         return Ok(format!("https://github.com/{}", with_git_suffix(value)));
     }
-    Err("Use owner/repo or a full repository URL.".to_string())
+    Err("REPO_URL_INVALID".to_string())
 }
 
 fn with_git_suffix(value: &str) -> String {
@@ -180,7 +180,7 @@ fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
         )
     };
     if ok == 0 {
-        return Err("Failed to encrypt the GitHub token.".to_string());
+        return Err("TOKEN_ENCRYPT_FAILED".to_string());
     }
     let bytes = unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
     unsafe {
@@ -213,7 +213,7 @@ fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
         )
     };
     if ok == 0 {
-        return Err("Failed to decrypt the GitHub token.".to_string());
+        return Err("TOKEN_DECRYPT_FAILED".to_string());
     }
     let bytes = unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
     unsafe {

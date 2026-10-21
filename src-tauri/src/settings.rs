@@ -32,8 +32,6 @@ pub struct AppSettings {
     pub mcp_enabled: bool,
     pub mcp_port: u16,
     pub github: Option<GithubAccount>,
-    /// The token came from Git Credential Manager, which other git tools share.
-    pub github_via_browser: bool,
 }
 
 impl Default for AppSettings {
@@ -44,7 +42,6 @@ impl Default for AppSettings {
             mcp_enabled: true,
             mcp_port: DEFAULT_MCP_PORT,
             github: None,
-            github_via_browser: false,
         }
     }
 }

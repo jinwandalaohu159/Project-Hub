@@ -97,7 +97,15 @@ describe("errorText", () => {
 
   it("recognises missing project folders", () => {
     setLocale("zh");
-    expect(errorText("Project folder not found: D:/old", t)).toContain("找不到项目文件夹");
+    expect(errorText("PROJECT_FOLDER_MISSING:D:/old", t)).toContain("找不到项目文件夹");
+  });
+
+  it("fills a code's detail into the message, in either language", () => {
+    setLocale("zh");
+    expect(errorText("PATH_NOT_FOUND:D:/projects/demo", t)).toBe("路径不存在：D:/projects/demo");
+    setLocale("en");
+    expect(errorText("PATH_NOT_FOUND:D:/projects/demo", t)).toBe("Path does not exist: D:/projects/demo");
+    expect(errorText("VERSION_EXISTS:main", t)).toBe('Version "main" already exists.');
   });
 });
 

@@ -58,7 +58,7 @@ impl GitService {
     pub(crate) fn require_current_branch(&self, repo_path: &str) -> Result<String, String> {
         let branch = self.get_current_branch(repo_path)?;
         if branch.is_empty() {
-            return Err("This operation needs an active version (not a detached state).".to_string());
+            return Err("VERSION_DETACHED".to_string());
         }
         Ok(branch)
     }
@@ -95,7 +95,7 @@ impl GitService {
     pub(crate) fn create_initial_branch_ref(&self, repo_path: &str, name: &str) -> Result<(), String> {
         self.run_git(repo_path, &["check-ref-format", "--branch", name])?;
         if self.branch_exists(repo_path, name) {
-            return Err(format!("Version \"{}\" already exists.", name));
+            return Err(format!("VERSION_EXISTS:{name}"));
         }
 
         self.ensure_commit_identity(repo_path)?;

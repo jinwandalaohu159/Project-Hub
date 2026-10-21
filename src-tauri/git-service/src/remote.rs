@@ -53,7 +53,7 @@ impl GitService {
     pub fn push(&self, repo_path: &str, token: Option<&str>, force: bool) -> Result<(), String> {
         let branch = self.require_current_branch(repo_path)?;
         if self.get_remote_url(repo_path, "origin").is_none() {
-            return Err("This project is not linked to a cloud repository yet.".to_string());
+            return Err("REMOTE_NOT_LINKED".to_string());
         }
 
         let header = token.map(|token| {

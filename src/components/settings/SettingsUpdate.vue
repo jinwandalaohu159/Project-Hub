@@ -7,7 +7,7 @@ import { useToast } from "../../composables/useToast";
 import { useI18n } from "../../composables/useI18n";
 import { errorText } from "../../utils/errors";
 
-const { currentVersion, releasesUrl, info, checking, installing, available, lastChecked, autoCheck, loadVersion, check, install } =
+const { currentVersion, releasesUrl, info, checking, installing, available, lastChecked, autoCheck, loadVersion, check, installNow } =
   useUpdater();
 const toast = useToast();
 const { t } = useI18n();
@@ -22,14 +22,6 @@ async function checkNow() {
     if (result && !result.available) toast.success(t("updateUpToDate", { version: result.current }));
   } catch (error) {
     toast.error(errorText(error, t), { detail: t("updateCheckFailed") });
-  }
-}
-
-async function installNow() {
-  try {
-    await install();
-  } catch (error) {
-    toast.error(errorText(error, t), { detail: t("updateFailed") });
   }
 }
 

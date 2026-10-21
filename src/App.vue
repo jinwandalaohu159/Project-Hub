@@ -18,6 +18,7 @@ import ToastHost from './components/ToastHost.vue'
 import ConfirmHost from './components/ConfirmHost.vue'
 import GithubLoginDialog from './components/GithubLoginDialog.vue'
 import UpdateBanner from './components/UpdateBanner.vue'
+import UpdateDialog from './components/UpdateDialog.vue'
 import TitleBar from './components/TitleBar.vue'
 import { useUpdater } from './composables/useUpdater'
 import { Plus, Columns2, Rows2 } from 'lucide-vue-next'
@@ -147,11 +148,11 @@ onUnmounted(() => {
   <TitleBar
     :dev-panel-open="showDevPanel"
     :settings-open="showSettings"
-    :update-available="updater.available.value"
     @toggle-dev-panel="showDevPanel = !showDevPanel"
     @open-settings="showSettings = true"
   />
   <UpdateBanner />
+  <UpdateDialog />
   <div class="flex min-h-0 w-full flex-1">
     <!-- Left panels area -->
     <template v-if="leftLayout === 'horizontal'">

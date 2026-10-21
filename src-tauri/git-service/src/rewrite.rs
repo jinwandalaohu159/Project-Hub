@@ -63,7 +63,7 @@ impl GitService {
     pub fn edit_record_message(&self, repo_path: &str, record: &str, message: &str) -> Result<(), String> {
         let message = message.trim();
         if message.is_empty() {
-            return Err("The title cannot be empty.".to_string());
+            return Err("TITLE_EMPTY".to_string());
         }
         lock_repo!(repo_path);
         self.rewrite_record(repo_path, record, Change::Message(message.to_string()))

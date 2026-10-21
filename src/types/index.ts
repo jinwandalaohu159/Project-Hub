@@ -89,6 +89,13 @@ export interface GithubAccount {
   email: string | null;
 }
 
+/** A browser sign-in in progress: the code the user enters at `verification_uri`. */
+export interface DeviceCode {
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+}
+
 export interface RepoInfo {
   full_name: string;
   clone_url: string;

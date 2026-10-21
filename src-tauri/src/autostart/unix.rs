@@ -123,7 +123,7 @@ pub fn set_enabled(enabled: bool) -> Result<(), String> {
         fs::remove_file(&path).map_err(|e| e.to_string())?;
     }
     if is_enabled()? != enabled {
-        return Err("Could not confirm the launch-at-login setting.".to_string());
+        return Err("AUTOSTART_UNCONFIRMED".to_string());
     }
     Ok(())
 }
