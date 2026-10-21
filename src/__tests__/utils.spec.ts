@@ -13,6 +13,8 @@ import {
 } from "../utils/path";
 import { findNode, removeNode, sortNodes, updateNodePath } from "../utils/fileTree";
 import { isTauri } from "../utils/env";
+import { createProjectCache } from "../utils/projectCache";
+import { useProjectData } from "../composables/useProjectData";
 
 describe("formatRelativeTime", () => {
   const { t, setLocale } = useI18n();
@@ -84,5 +86,57 @@ describe("file tree helpers", () => {
 describe("isTauri", () => {
   it("is false outside the desktop shell", () => {
     expect(isTauri()).toBe(false);
+  });
+});
+
+describe("createProjectCache", () => {
+  it("keeps the most recently used projects within its limit", () => {
+    const cache = createProjectCache<number>(2);
+    cache.set("a", 1);
+    cache.set("b", 2);
+    expect(cache.get("a")).toBe(1); // "a" is now the most recent
+    cache.set("c", 3);
+    expect(cache.get("b")).toBeUndefined();
+    expect(cache.get("a")).toBe(1);
+    expect(cache.get("c")).toBe(3);
+  });
+
+  it("replaces a project's value in place", () => {
+    const cache = createProjectCache<string[]>();
+    cache.set("a", ["old"]);
+    cache.set("a", ["new"]);
+    expect(cache.get("a")).toEqual(["new"]);
+  });
+});
+
+describe("useProjectData", () => {
+  it("shows a project's last value at once and keeps fresh ones", () => {
+    const records = useProjectData<string[]>("test-records", () => []);
+    expect(records.restore("a")).toBe(false);
+    records.update("a", ["a1"]);
+    records.update("b", ["b1"]);
+    expect(records.data.value).toEqual(["b1"]);
+
+    expect(records.restore("a")).toBe(true);
+    expect(records.data.value).toEqual(["a1"]);
+    expect(records.projectId.value).toBe("a");
+
+    // Shown but not kept: switching back brings the last kept value.
+    records.show("a", ["edited"]);
+    records.restore("b");
+    records.restore("a");
+    expect(records.data.value).toEqual(["a1"]);
+
+    records.clear();
+    expect(records.data.value).toEqual([]);
+    expect(records.projectId.value).toBeNull();
+  });
+
+  it("lets a panel created again find what the previous one loaded", () => {
+    useProjectData<number>("test-shared", () => 0).update("a", 7);
+    const again = useProjectData<number>("test-shared", () => 0);
+    expect(again.data.value).toBe(0);
+    expect(again.restore("a")).toBe(true);
+    expect(again.data.value).toBe(7);
   });
 });

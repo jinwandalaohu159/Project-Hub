@@ -3,12 +3,13 @@ import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import type * as Monaco from "monaco-editor";
 import { useFileStore } from "../composables/useFileStore";
 import { useI18n } from "../composables/useI18n";
-import { useTheme } from "../composables/useTheme";
 import { useProjectEvents } from "../composables/useProjectEvents";
 import { useToast } from "../composables/useToast";
 import { useConfirm } from "../composables/useConfirm";
 import { errorText } from "../utils/errors";
-import { defineEditorThemes, editorThemeName, languageForPath, loadMonaco } from "../utils/monaco";
+import { languageForPath, loadMonaco } from "../utils/monaco";
+import { defineEditorThemes } from "../utils/editorThemes";
+import { useCodeTheme } from "../composables/useCodeTheme";
 import Tooltip from "./Tooltip.vue";
 import { Lock, Pencil, Redo2, Save, Undo2 } from "lucide-vue-next";
 
@@ -27,7 +28,7 @@ const saveError = ref<string | null>(null);
 
 const { selectedFilePath } = useFileStore();
 const { t } = useI18n();
-const { theme } = useTheme();
+const { activeTheme } = useCodeTheme();
 const { workingTreeRefreshToken, notifyWorkingTreeChanged } = useProjectEvents();
 const toast = useToast();
 const { confirm } = useConfirm();
@@ -180,8 +181,8 @@ watch(selectedFilePath, async (path) => {
 
 watch(workingTreeRefreshToken, () => void followDisk());
 
-watch(theme, () => {
-  monacoApi?.editor.setTheme(editorThemeName(theme.value));
+watch(activeTheme, (next) => {
+  monacoApi?.editor.setTheme(next.id);
 });
 
 onMounted(async () => {
@@ -194,7 +195,7 @@ onMounted(async () => {
   editor = monaco.editor.create(editorContainer.value, {
     value: "",
     language: "plaintext",
-    theme: editorThemeName(theme.value),
+    theme: activeTheme.value.id,
     readOnly: true,
     minimap: { enabled: false },
     fontSize: 13,

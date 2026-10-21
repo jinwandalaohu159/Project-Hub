@@ -142,6 +142,10 @@ export default {
   saving: '保存中',
   darkMode: '深色',
   lightMode: '浅色',
+  codeTheme: '代码配色',
+  codeThemeDescription: '代码查看器的配色。选「跟随应用主题」时随深色 / 浅色自动切换。',
+  codeThemeAuto: '跟随应用主题',
+  codeThemePreviewComment: '保存当前版本',
   english: 'English',
   chinese: '中文',
 

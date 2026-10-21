@@ -8,10 +8,14 @@ import { useProjectEvents } from "./useProjectEvents";
 import { useAppLog } from "./useAppLog";
 import { useToast } from "./useToast";
 import { errorText } from "../utils/errors";
+import { useProjectData } from "./useProjectData";
 
 const projects = ref<Project[]>([]);
 const selectedProjectId = ref<string | null>(null);
-const branches = ref<Branch[]>([]);
+// The selected project's versions: its last known list at once, then the fresh one.
+const versions = useProjectData<Branch[]>("versions", () => []);
+const branches = versions.data;
+const branchesProjectId = versions.projectId;
 const loading = ref(false);
 const switching = ref(false);
 
@@ -104,7 +108,7 @@ export function useProjectStore() {
     await invoke("remove_project", { id });
     if (selectedProjectId.value === id) {
       selectedProjectId.value = null;
-      branches.value = [];
+      versions.clear();
       const { loadFileTree, clearSelection } = useFileStore();
       await loadFileTree(null);
       clearSelection();
@@ -114,6 +118,7 @@ export function useProjectStore() {
 
   async function selectProject(id: string) {
     selectedProjectId.value = id;
+    versions.restore(id);
     const { clearSelection } = useFileStore();
     clearSelection();
     await loadBranches();
@@ -122,7 +127,7 @@ export function useProjectStore() {
   async function loadBranches() {
     const project = selectedProject.value;
     if (!project || project.missing) {
-      branches.value = [];
+      versions.show(project?.id ?? null, []);
       return;
     }
     try {
@@ -137,10 +142,11 @@ export function useProjectStore() {
           notifyVersionContextChanged();
         }
       }
-      if (project.id === selectedProject.value?.id) branches.value = list;
+      versions.remember(project.id, list);
+      if (project.id === selectedProject.value?.id) versions.show(project.id, list);
     } catch (error) {
       if (project.id !== selectedProject.value?.id) return;
-      branches.value = [];
+      versions.show(project.id, []);
       // Repeated loads merge into one message instead of stacking.
       toast.error(t("loadVersionsFailed", { name: project.name }), { detail: errorText(error, t) });
     }
@@ -215,6 +221,7 @@ export function useProjectStore() {
     selectedProjectId,
     selectedProject,
     branches,
+    branchesProjectId,
     loading,
     switching,
     loadProjects,

@@ -23,6 +23,9 @@ const {
   selectedFilePath,
   loadingFileTree,
   fileTreeError,
+  fileTreeProjectId,
+  fileTreeStale,
+  fileTreeAwaiting,
   loadFileTree,
   loadDirectory,
   refreshFileTree,
@@ -342,27 +345,36 @@ function closeContextMenu() {
         <span class="font-serif text-[18px] font-semibold text-error leading-tight">{{ t('unableToLoadFiles') }}</span>
         <span class="mt-2 text-xs text-muted break-all">{{ fileTreeError }}</span>
       </div>
+      <div v-else-if="fileTreeAwaiting" class="py-8" />
       <div v-else-if="fileTree.length === 0" class="flex flex-col items-center justify-center py-8">
         <span class="font-serif text-[22px] font-semibold text-muted leading-tight">{{ t('emptyProject') }}</span>
       </div>
-      <FileTreeNode
-        v-for="node in fileTree"
-        :key="node.path"
-        :node="node"
-        :depth="0"
-        :selected-path="selectedFilePath"
-        :active-path="activeNodePath"
-        :dragging-path="draggingNode?.path ?? null"
-        :drag-target-path="dragTargetPath"
-        :suppress-click="suppressNodeClick"
-        :expanded-dirs="expandedDirs"
-        @toggle-dir="toggleDir"
-        @select-file="selectFileNode"
-        @node-context-menu="openNodeContextMenu"
-        @activate-node="activateNode"
-        @node-mouse-down="beginNodePointerDrag"
-        @click-suppressed="releaseSuppressedNodeClick(0)"
-      />
+      <!-- Re-keyed per project so another project's files ease in; dimmed while they are still loading. -->
+      <div
+        v-else
+        :key="fileTreeProjectId ?? ''"
+        class="swap-in transition-opacity"
+        :class="{ 'opacity-50 pointer-events-none': fileTreeStale }"
+      >
+        <FileTreeNode
+          v-for="node in fileTree"
+          :key="node.path"
+          :node="node"
+          :depth="0"
+          :selected-path="selectedFilePath"
+          :active-path="activeNodePath"
+          :dragging-path="draggingNode?.path ?? null"
+          :drag-target-path="dragTargetPath"
+          :suppress-click="suppressNodeClick"
+          :expanded-dirs="expandedDirs"
+          @toggle-dir="toggleDir"
+          @select-file="selectFileNode"
+          @node-context-menu="openNodeContextMenu"
+          @activate-node="activateNode"
+          @node-mouse-down="beginNodePointerDrag"
+          @click-suppressed="releaseSuppressedNodeClick(0)"
+        />
+      </div>
     </div>
     <ContextMenu :at="contextMenu" @close="closeContextMenu">
       <template v-if="contextMenu">

@@ -9,9 +9,10 @@ import { useConfirm } from "../composables/useConfirm";
 import { useToast } from "../composables/useToast";
 import { errorText } from "../utils/errors";
 import type { CommitEntry, DeleteRecordOutcome, DraftInfo, RestoreOutcome } from "../types";
-import { watch, ref } from "vue";
+import { computed, watch, ref } from "vue";
 import { ChevronRight, FilePen, Loader2, Pencil, RotateCcw, Trash2 } from "lucide-vue-next";
 import { formatRelativeTime } from "../utils/time";
+import { useProjectData } from "../composables/useProjectData";
 import RecordEditDialog from "./RecordEditDialog.vue";
 import ContextMenu from "./ContextMenu.vue";
 
@@ -25,28 +26,45 @@ const { commitLogRefreshToken, notifyVersionContextChanged } = useProjectEvents(
 const { logOperation } = useAppLog();
 const { confirm } = useConfirm();
 const toast = useToast();
-const commits = ref<CommitEntry[]>([]);
-const draft = ref<DraftInfo | null>(null);
+// The records on screen: the project's last loaded ones at once, then the fresh ones.
+const history = useProjectData<{ commits: CommitEntry[]; draft: DraftInfo | null }>("history", () => ({
+  commits: [],
+  draft: null,
+}));
+// Local edits (marking the current record, removing one) change what is shown until the next load.
+const commits = computed({
+  get: () => history.data.value.commits,
+  set: (value) => (history.data.value = { ...history.data.value, commits: value }),
+});
+const draft = computed({
+  get: () => history.data.value.draft,
+  set: (value) => (history.data.value = { ...history.data.value, draft: value }),
+});
 const restoringKey = ref<string | null>(null);
 const expanded = ref(new Set<string>());
 const menu = ref<{ x: number; y: number; commit: CommitEntry } | null>(null);
 const editing = ref<CommitEntry | null>(null);
 const editBusy = ref(false);
+const scroller = ref<HTMLElement | null>(null);
+
+// Another project's records start from the top.
+watch(history.projectId, () => {
+  if (scroller.value) scroller.value.scrollTop = 0;
+});
 
 async function loadCommits() {
   const project = selectedProject.value;
   if (!project || project.missing) {
-    commits.value = [];
-    draft.value = null;
+    history.clear();
     return;
   }
+  history.restore(project.id);
   const [log, currentDraft] = await Promise.all([
     invoke<CommitEntry[]>("get_log", { repoPath: project.path, count: HISTORY_LIMIT }).catch(() => []),
     invoke<DraftInfo | null>("get_draft", { repoPath: project.path }).catch(() => null),
   ]);
   if (project.id !== selectedProject.value?.id) return;
-  commits.value = log;
-  draft.value = currentDraft;
+  history.update(project.id, { commits: log, draft: currentDraft });
 }
 
 watch([selectedProject, commitLogRefreshToken], loadCommits, { immediate: true });
@@ -259,88 +277,91 @@ async function discardDraft() {
       <h3 class="text-xs font-semibold text-muted uppercase tracking-wider">{{ t('history') }}</h3>
       <span class="text-[11px] text-muted">{{ commits.length }}</span>
     </div>
-    <div class="relative flex-1 min-h-0 overflow-y-auto">
-      <Transition name="rise">
-        <div
-          v-if="draft"
-          class="group draft-row pl-5 pr-4 py-2 border-b border-border/50 cursor-pointer"
-          :class="restoringKey && restoringKey !== DRAFT_KEY ? 'opacity-50 pointer-events-none' : ''"
-          @click="restoreDraft"
-        >
-          <div class="flex items-start gap-2">
-            <FilePen :size="14" class="mt-0.5 shrink-0 text-warning" />
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-xs text-ink font-medium truncate flex-1">{{ t('draftEntryTitle') }}</span>
-                <span class="text-xs text-muted shrink-0">{{ formatTime(draft.time) }}</span>
+    <div ref="scroller" class="relative flex-1 min-h-0 overflow-y-auto">
+      <!-- Re-keyed per project: another project's records ease in, with no empty frame between. -->
+      <div :key="history.projectId.value ?? ''" class="swap-in">
+        <Transition name="rise">
+          <div
+            v-if="draft"
+            class="group draft-row pl-5 pr-4 py-2 border-b border-border/50 cursor-pointer"
+            :class="restoringKey && restoringKey !== DRAFT_KEY ? 'opacity-50 pointer-events-none' : ''"
+            @click="restoreDraft"
+          >
+            <div class="flex items-start gap-2">
+              <FilePen :size="14" class="mt-0.5 shrink-0 text-warning" />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-ink font-medium truncate flex-1">{{ t('draftEntryTitle') }}</span>
+                  <span class="text-xs text-muted shrink-0">{{ formatTime(draft.time) }}</span>
+                </div>
+                <div class="mt-1 flex items-center gap-2 text-[11px] text-muted">
+                  <span>{{ t('draftEntryMeta', { count: draft.files, base: shortHash(draft.base) }) }}</span>
+                  <button
+                    class="ml-auto opacity-0 group-hover:opacity-100 rounded px-1.5 text-muted hover:text-error hover:bg-error/10"
+                    @click.stop="discardDraft"
+                  >
+                    {{ t('discard') }}
+                  </button>
+                </div>
               </div>
-              <div class="mt-1 flex items-center gap-2 text-[11px] text-muted">
-                <span>{{ t('draftEntryMeta', { count: draft.files, base: shortHash(draft.base) }) }}</span>
-                <button
-                  class="ml-auto opacity-0 group-hover:opacity-100 rounded px-1.5 text-muted hover:text-error hover:bg-error/10"
-                  @click.stop="discardDraft"
-                >
-                  {{ t('discard') }}
-                </button>
-              </div>
+              <Loader2 v-if="restoringKey === DRAFT_KEY" :size="14" class="mt-0.5 shrink-0 spin text-primary" />
+              <RotateCcw v-else :size="14" class="mt-0.5 shrink-0 text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
-            <Loader2 v-if="restoringKey === DRAFT_KEY" :size="14" class="mt-0.5 shrink-0 spin text-primary" />
-            <RotateCcw v-else :size="14" class="mt-0.5 shrink-0 text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
-        </div>
-      </Transition>
-      <TransitionGroup name="list" tag="div" class="relative">
-        <div
-          v-for="commit in commits"
-          :key="commit.hash"
-          class="group pl-5 pr-4 py-2 border-b border-l-2 border-border/50 transition-colors"
-          :class="[
-            restoringKey && restoringKey !== commit.hash ? 'opacity-50 pointer-events-none' : '',
-            commit.is_current
-              ? 'bg-success/10 border-l-success cursor-default'
-              : 'border-l-transparent hover:bg-surface-raised cursor-pointer'
-          ]"
-          @click="restoreCommit(commit)"
-          @contextmenu.prevent="openMenu($event, commit)"
-        >
-          <div class="flex items-start gap-2">
-            <button
-              class="mt-0.5 -ml-1 h-4 w-4 shrink-0 flex items-center justify-center rounded text-muted hover:text-ink"
-              :class="commit.body ? '' : 'invisible'"
-              :title="t('showDetails')"
-              @click.stop="toggleExpanded(commit.hash)"
-            >
-              <ChevronRight :size="13" class="transition-transform duration-200" :class="{ 'rotate-90': expanded.has(commit.hash) }" />
-            </button>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-xs text-ink truncate flex-1">{{ commit.message }}</span>
-                <span class="text-xs text-muted shrink-0">{{ commit.time ? formatTime(commit.time) : t('unknown') }}</span>
+        </Transition>
+        <TransitionGroup name="list" tag="div" class="relative">
+          <div
+            v-for="commit in commits"
+            :key="commit.hash"
+            class="group pl-5 pr-4 py-2 border-b border-l-2 border-border/50 transition-colors"
+            :class="[
+              restoringKey && restoringKey !== commit.hash ? 'opacity-50 pointer-events-none' : '',
+              commit.is_current
+                ? 'bg-success/10 border-l-success cursor-default'
+                : 'border-l-transparent hover:bg-surface-raised cursor-pointer'
+            ]"
+            @click="restoreCommit(commit)"
+            @contextmenu.prevent="openMenu($event, commit)"
+          >
+            <div class="flex items-start gap-2">
+              <button
+                class="mt-0.5 -ml-1 h-4 w-4 shrink-0 flex items-center justify-center rounded text-muted hover:text-ink"
+                :class="commit.body ? '' : 'invisible'"
+                :title="t('showDetails')"
+                @click.stop="toggleExpanded(commit.hash)"
+              >
+                <ChevronRight :size="13" class="transition-transform duration-200" :class="{ 'rotate-90': expanded.has(commit.hash) }" />
+              </button>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-ink truncate flex-1">{{ commit.message }}</span>
+                  <span class="text-xs text-muted shrink-0">{{ commit.time ? formatTime(commit.time) : t('unknown') }}</span>
+                </div>
+                <Transition name="rise">
+                  <p
+                    v-if="commit.body && expanded.has(commit.hash)"
+                    class="mt-1 whitespace-pre-line break-words text-[11.5px] leading-5 text-muted"
+                  >{{ commit.body }}</p>
+                </Transition>
+                <div class="mt-1 flex items-center gap-2 text-[11px] text-muted">
+                  <span v-if="commit.is_current" class="shrink-0 rounded bg-success/15 px-1.5 py-0.5 text-success">{{ t('current') }}</span>
+                  <span class="truncate">{{ commit.author }}</span>
+                  <span class="shrink-0 font-mono">{{ shortHash(commit.hash) }}</span>
+                  <span class="truncate">{{ formatExactTime(commit.time) }}</span>
+                </div>
               </div>
-              <Transition name="rise">
-                <p
-                  v-if="commit.body && expanded.has(commit.hash)"
-                  class="mt-1 whitespace-pre-line break-words text-[11.5px] leading-5 text-muted"
-                >{{ commit.body }}</p>
-              </Transition>
-              <div class="mt-1 flex items-center gap-2 text-[11px] text-muted">
-                <span v-if="commit.is_current" class="shrink-0 rounded bg-success/15 px-1.5 py-0.5 text-success">{{ t('current') }}</span>
-                <span class="truncate">{{ commit.author }}</span>
-                <span class="shrink-0 font-mono">{{ shortHash(commit.hash) }}</span>
-                <span class="truncate">{{ formatExactTime(commit.time) }}</span>
-              </div>
+              <Loader2 v-if="restoringKey === commit.hash" :size="14" class="mt-0.5 shrink-0 spin text-primary" />
+              <!-- The current record keeps the icon's space too, so every row lines up. -->
+              <RotateCcw
+                v-else
+                :size="14"
+                class="mt-0.5 shrink-0 text-muted transition-opacity"
+                :class="commit.is_current ? 'invisible' : 'opacity-0 group-hover:opacity-100'"
+              />
             </div>
-            <Loader2 v-if="restoringKey === commit.hash" :size="14" class="mt-0.5 shrink-0 spin text-primary" />
-            <!-- The current record keeps the icon's space too, so every row lines up. -->
-            <RotateCcw
-              v-else
-              :size="14"
-              class="mt-0.5 shrink-0 text-muted transition-opacity"
-              :class="commit.is_current ? 'invisible' : 'opacity-0 group-hover:opacity-100'"
-            />
           </div>
-        </div>
-      </TransitionGroup>
+        </TransitionGroup>
+      </div>
     </div>
 
     <ContextMenu :at="menu" :min-width="200" @close="closeMenu">

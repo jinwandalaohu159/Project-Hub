@@ -17,7 +17,7 @@ const DEFAULT_BRANCH_LIST_HEIGHT = 96;
 /** The search text; kept by the parent so it survives switching projects. */
 const query = defineModel<string>("query", { required: true });
 
-const { branches, switching } = useProjectStore();
+const { branches, branchesProjectId, switching } = useProjectStore();
 const { t } = useI18n();
 const { showModal, pendingBranch, unsavedChanges, switchingTarget, requestSwitch, chooseAction, cancel } =
   useVersionSwitch();
@@ -86,7 +86,8 @@ function onBranchListResize(dy: number) {
     <div v-else-if="filteredBranches.length === 0" class="flex flex-col items-center justify-center py-4">
       <span class="font-serif text-[17px] font-semibold text-muted">{{ t('noVersionMatches') }}</span>
     </div>
-    <TransitionGroup name="list" tag="div" class="relative">
+    <!-- Re-keyed per project: another project's versions ease in instead of animating one by one. -->
+    <TransitionGroup :key="branchesProjectId ?? ''" name="list" tag="div" class="relative swap-in">
       <div
         v-for="branch in filteredBranches"
         :key="branch.name"

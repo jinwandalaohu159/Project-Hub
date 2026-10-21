@@ -4,6 +4,7 @@ import { usePersistentRef, clamp } from '../composables/usePersistentRef'
 import { X } from 'lucide-vue-next'
 import PanelResizer from './PanelResizer.vue'
 import SettingsGeneral from './settings/SettingsGeneral.vue'
+import SettingsCodeTheme from './settings/SettingsCodeTheme.vue'
 import SettingsUpdate from './settings/SettingsUpdate.vue'
 import SettingsAccount from './settings/SettingsAccount.vue'
 import SettingsMcp from './settings/SettingsMcp.vue'
@@ -38,6 +39,8 @@ function onPanelResize(dx: number) {
       </div>
       <div class="settings-body">
         <SettingsGeneral />
+
+        <SettingsCodeTheme />
 
         <SettingsUpdate />
 

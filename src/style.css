@@ -191,6 +191,63 @@ body.ph-resizing * {
   transform: translateY(-4px);
 }
 
+/* Switching the panels between side by side and stacked (see utils/viewTransition.ts): each named
+   panel morphs from its old box to its new one. Snapshots keep their natural size and are clipped
+   by the moving box instead of being stretched, and old and new content cross-fade. */
+.vt-panel-projects {
+  view-transition-name: panel-projects;
+}
+
+.vt-panel-files {
+  view-transition-name: panel-files;
+}
+
+.vt-panel-code {
+  view-transition-name: panel-code;
+}
+
+::view-transition-group(*) {
+  animation-duration: var(--dur-slow);
+  animation-timing-function: var(--ease-out);
+}
+
+::view-transition-image-pair(panel-projects),
+::view-transition-image-pair(panel-files),
+::view-transition-image-pair(panel-code) {
+  overflow: hidden;
+}
+
+::view-transition-old(panel-projects),
+::view-transition-new(panel-projects),
+::view-transition-old(panel-files),
+::view-transition-new(panel-files),
+::view-transition-old(panel-code),
+::view-transition-new(panel-code) {
+  inline-size: auto;
+  block-size: auto;
+  object-fit: none;
+  object-position: left top;
+  animation-duration: var(--dur-slow);
+}
+
+/* The morph moves the panels; their own size transitions would fight it. */
+.layout-morphing .panel-size-transition {
+  transition: none !important;
+}
+
+/* Content that switches to another project (re-keyed) eases in where it stands; the old content
+   is gone in the same frame, so there is never an empty moment in between. */
+.swap-in {
+  animation: ph-swap-in var(--dur) var(--ease-out);
+}
+
+@keyframes ph-swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
 .list-move,
 .list-enter-active,
 .list-leave-active {

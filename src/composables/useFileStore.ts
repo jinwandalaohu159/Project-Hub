@@ -1,7 +1,8 @@
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { Project } from "../types";
 import { basename, dirname, isChildPath, joinPath, pathDepth, replacePathPrefix, samePath } from "../utils/path";
 import { findNode } from "../utils/fileTree";
+import { useProjectData } from "./useProjectData";
 
 export interface FileNode {
   name: string;
@@ -12,11 +13,25 @@ export interface FileNode {
   is_loading: boolean;
 }
 
-const fileTree = ref<FileNode[]>([]);
+// The project's top-level files: its last known tree at once, then the fresh one.
+const fileTrees = useProjectData<FileNode[]>("file-tree", () => []);
+const fileTree = fileTrees.data;
+/** The project whose files are shown; a change re-keys the tree so it eases in. */
+const fileTreeProjectId = fileTrees.projectId;
 const selectedFilePath = ref<string | null>(null);
 const currentProject = ref<Project | null>(null);
 const loadingFileTree = ref(false);
 const fileTreeError = ref<string | null>(null);
+/** Right after a switch the tree shown can still be the previous project's. */
+const showingOtherProject = computed(
+  () => !!currentProject.value && fileTreeProjectId.value !== currentProject.value.id,
+);
+/** The previous project's tree, still shown (dimmed, not clickable) while the new one loads. */
+const fileTreeStale = computed(() => showingOtherProject.value && fileTree.value.length > 0);
+/** Nothing to show yet for the new project: better blank than a wrong "empty project". */
+const fileTreeAwaiting = computed(() => showingOtherProject.value && fileTree.value.length === 0);
+/** A quick load never flashes "Loading"; only a slow one replaces the tree with it. */
+const LOADING_HINT_DELAY_MS = 250;
 
 const IGNORED_DIRS = new Set([".git", "node_modules", ".DS_Store", "__pycache__", ".vscode", "dist", "target"]);
 const KEEP_FILE_NAME = ".project-hub-keep";
@@ -35,7 +50,7 @@ export function useFileStore() {
   async function loadFileTree(project: Project | null, options: { showLoading?: boolean } = {}) {
     const showLoading = options.showLoading ?? true;
     if (!project) {
-      fileTree.value = [];
+      fileTrees.clear();
       selectedFilePath.value = null;
       currentProject.value = null;
       loadingFileTree.value = false;
@@ -43,20 +58,25 @@ export function useFileStore() {
       return;
     }
     currentProject.value = project;
-    if (showLoading) {
-      loadingFileTree.value = true;
-    }
     fileTreeError.value = null;
+
+    // A project seen before shows its last tree at once; otherwise the previous project's tree
+    // stays, dimmed, until this one is read.
+    const shown = fileTrees.restore(project.id);
+    const loadingHint =
+      showLoading && !shown ? setTimeout(() => (loadingFileTree.value = true), LOADING_HINT_DELAY_MS) : null;
+
     try {
       const entries = await readDirEntries(project.path);
-      fileTree.value = entries;
+      if (currentProject.value?.id !== project.id) return;
+      fileTrees.update(project.id, entries);
     } catch (error) {
-      fileTree.value = [];
+      if (currentProject.value?.id !== project.id) return;
+      fileTrees.show(project.id, []);
       fileTreeError.value = error instanceof Error ? error.message : String(error);
     } finally {
-      if (showLoading) {
-        loadingFileTree.value = false;
-      }
+      if (loadingHint) clearTimeout(loadingHint);
+      if (currentProject.value?.id === project.id) loadingFileTree.value = false;
     }
   }
 
@@ -268,6 +288,9 @@ export function useFileStore() {
     currentProject,
     loadingFileTree,
     fileTreeError,
+    fileTreeProjectId,
+    fileTreeStale,
+    fileTreeAwaiting,
     loadFileTree,
     loadDirectory,
     refreshFileTree,

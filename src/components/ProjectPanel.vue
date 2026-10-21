@@ -213,7 +213,9 @@ function onProjectListResize(dy: number) {
         </div>
       </div>
 
-      <div v-else-if="selectedProjectId" :key="selectedProjectId" class="flex-1 min-h-0 overflow-hidden flex flex-col">
+      <!-- One stable key: switching projects updates the panels in place (each eases its own content
+           in) instead of fading the whole area out and rebuilding it empty. -->
+      <div v-else-if="selectedProjectId" key="project" class="flex-1 min-h-0 overflow-hidden flex flex-col">
         <div class="shrink-0 pl-5 pr-4 pt-2 pb-2 border-b border-border bg-canvas">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">

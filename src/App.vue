@@ -37,14 +37,17 @@ let unlistenRepoChanged: UnlistenFn | null = null
 
 const {
   leftWidth,
-  middleWidth,
   leftCollapsed,
   middleCollapsed,
   rightCollapsed,
   leftLayout,
+  stacked,
+  projectCollapsed,
+  filesCollapsed,
+  projectPanelStyle,
+  filesPanelStyle,
   leftCollapsedVertical,
   middleCollapsedVertical,
-  verticalSplit,
   verticalContainerRef,
   onLeftResize,
   onMiddleResize,
@@ -64,7 +67,6 @@ const codePanelTitle = computed(() => {
   return t('code')
 })
 
-const verticalFileOffsetPx = 10
 const toolbarButtonClass = 'w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-ink hover:bg-surface-raised transition-colors'
 
 onMounted(async () => {
@@ -105,23 +107,31 @@ onUnmounted(() => {
   <UpdateBanner />
   <UpdateDialog />
   <div class="flex min-h-0 w-full flex-1">
-    <!-- Left panels area -->
-    <template v-if="leftLayout === 'horizontal'">
-      <!-- Left Panel: ProjectPanel -->
+    <!-- Left panels: projects and files, side by side or stacked. Both arrangements are one tree,
+         so switching keeps every panel (and what it has loaded) and only moves it. -->
+    <div
+      ref="verticalContainerRef"
+      :data-layout="leftLayout"
+      class="flex min-h-0 shrink-0"
+      :class="stacked ? 'flex-col border-r border-border panel-size-transition' : 'flex-row'"
+      :style="stacked ? { width: leftWidth + 'px' } : undefined"
+    >
       <CollapsiblePanel
-        v-model:collapsed="leftCollapsed"
+        v-model:collapsed="projectCollapsed"
         :title="t('projects')"
         side="left"
-        :style="{ width: leftCollapsed ? '40px' : leftWidth + 'px' }"
-        class="shrink-0 border-r border-border panel-size-transition"
+        :style="projectPanelStyle"
+        class="vt-panel-projects panel-size-transition"
+        :class="stacked ? 'border-b border-border' : 'shrink-0 border-r border-border'"
       >
         <template #title-actions>
-          <Tooltip :text="t('stackPanelsVertically')">
+          <Tooltip :text="stacked ? t('sideBySideLayout') : t('stackPanelsVertically')">
             <button
               @click.stop="toggleLeftLayout"
               :class="toolbarButtonClass"
             >
-              <Columns2 :size="17" />
+              <Rows2 v-if="stacked" :size="17" />
+              <Columns2 v-else :size="17" />
             </button>
           </Tooltip>
           <Tooltip :text="t('addProject')">
@@ -135,79 +145,34 @@ onUnmounted(() => {
         </template>
         <ProjectPanel />
       </CollapsiblePanel>
-      <PanelResizer v-if="!leftCollapsed" side="left" @resize="onLeftResize" @reset="resetLeftWidth" />
+      <PanelResizer
+        v-if="stacked && !leftCollapsedVertical && !middleCollapsedVertical"
+        direction="vertical"
+        @resize="onVerticalResize"
+        @reset="resetVerticalSplit"
+      />
+      <PanelResizer v-else-if="!stacked && !leftCollapsed" side="left" @resize="onLeftResize" @reset="resetLeftWidth" />
 
-      <!-- Middle Panel: FileTree -->
       <CollapsiblePanel
-        v-model:collapsed="middleCollapsed"
+        v-model:collapsed="filesCollapsed"
         :title="t('files')"
         side="left"
-        :style="{ width: middleCollapsed ? '40px' : middleWidth + 'px' }"
-        class="shrink-0 border-r border-border panel-size-transition"
+        :style="filesPanelStyle"
+        class="vt-panel-files panel-size-transition"
+        :class="stacked ? '' : 'shrink-0 border-r border-border'"
       >
         <FileTree />
       </CollapsiblePanel>
-      <PanelResizer v-if="!middleCollapsed" side="left" @resize="onMiddleResize" @reset="resetMiddleWidth" />
-    </template>
-
-    <template v-else>
-      <!-- Vertical layout: both panels stacked -->
-      <div
-        ref="verticalContainerRef"
-        class="flex flex-col shrink-0 border-r border-border panel-size-transition"
-        :style="{ width: leftWidth + 'px' }"
-      >
-        <CollapsiblePanel
-          v-model:collapsed="leftCollapsedVertical"
-          :title="t('projects')"
-          side="left"
-          :style="leftCollapsedVertical ? { height: '40px' } : middleCollapsedVertical ? { flex: 1 } : { height: `calc(${verticalSplit}% - ${verticalFileOffsetPx}px)` }"
-          class="border-b border-border panel-size-transition"
-        >
-          <template #title-actions>
-            <Tooltip :text="t('sideBySideLayout')">
-              <button
-                @click.stop="toggleLeftLayout"
-                :class="toolbarButtonClass"
-              >
-                <Rows2 :size="17" />
-              </button>
-            </Tooltip>
-            <Tooltip :text="t('addProject')">
-              <button
-                @click.stop="projectStore.addProject"
-                :class="toolbarButtonClass"
-              >
-                <Plus :size="17" />
-              </button>
-            </Tooltip>
-          </template>
-          <ProjectPanel />
-        </CollapsiblePanel>
-        <PanelResizer
-          v-if="!leftCollapsedVertical && !middleCollapsedVertical"
-          direction="vertical"
-          @resize="onVerticalResize"
-          @reset="resetVerticalSplit"
-        />
-        <CollapsiblePanel
-          v-model:collapsed="middleCollapsedVertical"
-          :title="t('files')"
-          side="left"
-          :style="middleCollapsedVertical ? { height: '40px' } : { flex: 1 }"
-          class="panel-size-transition"
-        >
-          <FileTree />
-        </CollapsiblePanel>
-      </div>
-      <PanelResizer side="left" @resize="onLeftResize" @reset="resetLeftWidth" />
-    </template>
+      <PanelResizer v-if="!stacked && !middleCollapsed" side="left" @resize="onMiddleResize" @reset="resetMiddleWidth" />
+    </div>
+    <PanelResizer v-if="stacked" side="left" @resize="onLeftResize" @reset="resetLeftWidth" />
 
     <!-- Right Panel: CodeViewer -->
     <CollapsiblePanel
       v-model:collapsed="rightCollapsed"
       :title="codePanelTitle"
       side="right"
+      class="vt-panel-code"
       :class="rightCollapsed ? 'w-10 shrink-0' : 'flex-1 min-w-0'"
     >
       <CodeViewer />

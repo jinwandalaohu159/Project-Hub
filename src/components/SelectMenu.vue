@@ -23,6 +23,11 @@ const props = withDefaults(
 const model = defineModel<T | "">({ required: true });
 /** Only when the user picks an option, like <select>'s change event. */
 const emit = defineEmits<{ change: [value: T] }>();
+/** Richer rows than plain labels (e.g. color swatches); both fall back to the label. */
+defineSlots<{
+  selected?: (props: { option: SelectOption<T> }) => unknown;
+  option?: (props: { option: SelectOption<T>; chosen: boolean }) => unknown;
+}>();
 
 const VIEWPORT_PADDING = 8;
 const MAX_PANEL_HEIGHT = 280;
@@ -125,7 +130,8 @@ useDismiss({
     @keydown="onKeydown"
   >
     <span class="min-w-0 flex-1 truncate text-left" :class="{ 'text-muted': !selected }">
-      {{ selected?.label ?? placeholder }}
+      <slot v-if="selected" name="selected" :option="selected">{{ selected.label }}</slot>
+      <template v-else>{{ placeholder }}</template>
     </span>
     <ChevronDown :size="size === 'sm' ? 13 : 14" class="select-chevron" />
   </button>
@@ -144,7 +150,9 @@ useDismiss({
           @mouseenter="active = index"
           @click="choose(option)"
         >
-          <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+          <span class="min-w-0 flex-1 truncate">
+            <slot name="option" :option="option" :chosen="option.value === model">{{ option.label }}</slot>
+          </span>
           <Check v-if="option.value === model" :size="13" class="shrink-0 text-primary" />
         </button>
       </div>

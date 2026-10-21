@@ -1,12 +1,17 @@
-import { ref, watch } from 'vue'
+import { computed, ref, watch, type CSSProperties } from 'vue'
 import { usePersistentRef, clamp } from './usePersistentRef'
 import { useProjectEvents } from './useProjectEvents'
+import { morphLayout } from '../utils/viewTransition'
 
 const DEFAULT_LEFT_WIDTH = 300
 const DEFAULT_MIDDLE_WIDTH = 280
 const DEFAULT_VERTICAL_SPLIT = 66.3
 const MIN_PANEL_WIDTH = 160
 const MAX_PANEL_WIDTH = 900
+/** Stacked, the project panel gives up this much of its share so the file panel's title fits. */
+const STACKED_FILE_OFFSET_PX = 10
+/** Width (side by side) or height (stacked) of a collapsed panel. */
+const COLLAPSED_PX = 40
 
 export type LeftLayout = 'horizontal' | 'vertical'
 
@@ -68,8 +73,43 @@ export function usePanelLayout() {
     verticalSplit.value = DEFAULT_VERTICAL_SPLIT
   }
 
+  // Both arrangements render the same panels; these pick each panel's collapse state and size for
+  // the current one, so switching moves the panels instead of rebuilding them.
+  const stacked = computed(() => leftLayout.value === 'vertical')
+
+  const projectCollapsed = computed({
+    get: () => (stacked.value ? leftCollapsedVertical.value : leftCollapsed.value),
+    set: (value: boolean) => {
+      if (stacked.value) leftCollapsedVertical.value = value
+      else leftCollapsed.value = value
+    },
+  })
+
+  const filesCollapsed = computed({
+    get: () => (stacked.value ? middleCollapsedVertical.value : middleCollapsed.value),
+    set: (value: boolean) => {
+      if (stacked.value) middleCollapsedVertical.value = value
+      else middleCollapsed.value = value
+    },
+  })
+
+  const projectPanelStyle = computed<CSSProperties>(() => {
+    if (!stacked.value) return { width: `${leftCollapsed.value ? COLLAPSED_PX : leftWidth.value}px` }
+    if (leftCollapsedVertical.value) return { height: `${COLLAPSED_PX}px` }
+    if (middleCollapsedVertical.value) return { flex: 1 }
+    return { height: `calc(${verticalSplit.value}% - ${STACKED_FILE_OFFSET_PX}px)` }
+  })
+
+  const filesPanelStyle = computed<CSSProperties>(() => {
+    if (!stacked.value) return { width: `${middleCollapsed.value ? COLLAPSED_PX : middleWidth.value}px` }
+    return middleCollapsedVertical.value ? { height: `${COLLAPSED_PX}px` } : { flex: 1 }
+  })
+
+  /** The panels morph to the other arrangement rather than jumping. */
   function toggleLeftLayout() {
-    leftLayout.value = leftLayout.value === 'horizontal' ? 'vertical' : 'horizontal'
+    morphLayout(() => {
+      leftLayout.value = leftLayout.value === 'horizontal' ? 'vertical' : 'horizontal'
+    })
   }
 
   // Stacked, the file panel folds away while there are unsaved changes so the change list has room,
@@ -97,6 +137,11 @@ export function usePanelLayout() {
     middleCollapsed,
     rightCollapsed,
     leftLayout,
+    stacked,
+    projectCollapsed,
+    filesCollapsed,
+    projectPanelStyle,
+    filesPanelStyle,
     leftCollapsedVertical,
     middleCollapsedVertical,
     verticalSplit,

@@ -142,6 +142,10 @@ export default {
   launchOnStartupDescription: 'Start minimized to the tray after you sign in to the computer.',
   darkMode: 'Dark',
   lightMode: 'Light',
+  codeTheme: 'Code colors',
+  codeThemeDescription: 'Colors of the code viewer. "Follow app theme" switches with dark / light.',
+  codeThemeAuto: 'Follow app theme',
+  codeThemePreviewComment: 'Save the current version',
   english: 'English',
   chinese: '中文',
 

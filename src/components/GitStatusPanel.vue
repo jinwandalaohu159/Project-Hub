@@ -9,9 +9,10 @@ import { useToast } from "../composables/useToast";
 import { usePersistentRef, clamp } from "../composables/usePersistentRef";
 import { errorText } from "../utils/errors";
 import { changeDisplayPath } from "../utils/path";
-import type { FileDiff, RepoState, StatusSummary } from "../types";
+import type { RepoState, StatusSummary } from "../types";
 import { Save } from "lucide-vue-next";
 import SaveVersionDialog from "./SaveVersionDialog.vue";
+import { useProjectData } from "../composables/useProjectData";
 import PanelResizer from "./PanelResizer.vue";
 import FileStatusChip from "./FileStatusChip.vue";
 
@@ -29,9 +30,12 @@ const {
 } = useProjectEvents();
 const { logOperation } = useAppLog();
 const toast = useToast();
-const changes = ref<FileDiff[]>([]);
-const totalChanges = ref(0);
-const truncatedChanges = ref(false);
+// The unsaved changes on screen: the project's last known list at once, then the fresh one.
+const noChanges = (): StatusSummary => ({ files: [], total: 0, truncated: false });
+const status = useProjectData("status", noChanges);
+const changes = computed(() => status.data.value.files);
+const totalChanges = computed(() => status.data.value.total);
+const truncatedChanges = computed(() => status.data.value.truncated);
 const showSaveDialog = ref(false);
 const saving = ref(false);
 const statusInFlight = ref(false);
@@ -42,12 +46,7 @@ let lastRepoState: string | null = null;
 
 const currentBranch = computed(() => branches.value.find((branch) => branch.is_current)?.name ?? "");
 
-function resetStatus() {
-  changes.value = [];
-  totalChanges.value = 0;
-  truncatedChanges.value = false;
-  setWorkingTreeChangeCount(0);
-}
+watch(totalChanges, setWorkingTreeChangeCount, { immediate: true });
 
 async function loadStatus(options: { force?: boolean } = {}) {
   if ((statusInFlight.value || saving.value) && !options.force) return;
@@ -55,10 +54,11 @@ async function loadStatus(options: { force?: boolean } = {}) {
   const requestId = ++statusRequestId;
   const project = selectedProject.value;
   if (!project || project.missing) {
-    resetStatus();
+    status.clear();
     statusInFlight.value = false;
     return;
   }
+  status.restore(project.id);
 
   statusInFlight.value = true;
   try {
@@ -67,13 +67,10 @@ async function loadStatus(options: { force?: boolean } = {}) {
       limit: STATUS_DISPLAY_LIMIT,
     });
     if (requestId !== statusRequestId) return;
-    changes.value = summary.files;
-    totalChanges.value = summary.total;
-    truncatedChanges.value = summary.truncated;
-    setWorkingTreeChangeCount(summary.total);
+    status.update(project.id, summary);
   } catch {
     if (requestId !== statusRequestId) return;
-    resetStatus();
+    status.show(project.id, noChanges());
   } finally {
     if (requestId === statusRequestId) {
       statusInFlight.value = false;

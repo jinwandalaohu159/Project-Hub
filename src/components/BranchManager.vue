@@ -163,6 +163,18 @@ watch(versionSwitchToken, () => {
   deleteTarget.value = "";
   mergeSource.value = "";
 });
+
+// The panels stay mounted across projects; a half-filled action must not carry over to the next one.
+watch(
+  () => selectedProject.value?.id,
+  () => {
+    if (busy.value) return;
+    closePanels();
+    newBranchName.value = "";
+    deleteTarget.value = "";
+    mergeSource.value = "";
+  },
+);
 </script>
 
 <template>

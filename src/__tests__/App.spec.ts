@@ -45,10 +45,12 @@ describe("App layout", () => {
     });
 
     const vm = wrapper.vm as any;
+    // The file panel's width is applied through its style.
+    const filesWidth = parseInt(vm.filesPanelStyle.width, 10);
     expect(vm.leftWidth).toBeLessThanOrEqual(500);
-    expect(vm.middleWidth).toBeLessThanOrEqual(500);
+    expect(filesWidth).toBeLessThanOrEqual(500);
     expect(vm.leftWidth).toBeGreaterThanOrEqual(160);
-    expect(vm.middleWidth).toBeGreaterThanOrEqual(160);
+    expect(filesWidth).toBeGreaterThanOrEqual(160);
   });
 
   it("hides resizers when panels are collapsed", async () => {
@@ -116,5 +118,28 @@ describe("App layout", () => {
     vm.toggleLeftLayout();
     await wrapper.vm.$nextTick();
     expect(vm.leftLayout).toBe('horizontal');
+  });
+
+  it("keeps the same panels when switching layout instead of rebuilding them", async () => {
+    let mounts = 0;
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          ProjectPanel: { template: "<div />", mounted: () => (mounts += 1) },
+          FileTree: { template: "<div />", mounted: () => (mounts += 1) },
+          CodeViewer: { template: "<div />" },
+          PanelResizer: panelResizerStub,
+          CollapsiblePanel: collapsiblePanelStub,
+        },
+      },
+    });
+
+    const vm = wrapper.vm as any;
+    expect(mounts).toBe(2);
+    vm.toggleLeftLayout();
+    await wrapper.vm.$nextTick();
+    vm.toggleLeftLayout();
+    await wrapper.vm.$nextTick();
+    expect(mounts).toBe(2);
   });
 });
