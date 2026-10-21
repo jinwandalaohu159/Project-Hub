@@ -211,29 +211,6 @@ body.ph-resizing * {
   animation-timing-function: var(--ease-out);
 }
 
-/* The user guide eases in and out of place; moving between the middle and the right morphs. */
-::view-transition-new(guide-reader):only-child {
-  animation: guide-in var(--dur-slow) var(--ease-out);
-}
-
-::view-transition-old(guide-reader):only-child {
-  animation: guide-out var(--dur) var(--ease-out) forwards;
-}
-
-@keyframes guide-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.97);
-  }
-}
-
-@keyframes guide-out {
-  to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-}
-
 ::view-transition-image-pair(panel-projects),
 ::view-transition-image-pair(panel-files),
 ::view-transition-image-pair(panel-code) {
