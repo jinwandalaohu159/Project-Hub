@@ -120,9 +120,15 @@ export interface McpStatus {
   exe_path: string;
 }
 
+/** Something that went wrong with one project; `message` is an error code (see utils/errors). */
+export interface ProjectIssue {
+  project: string;
+  message: string;
+}
+
 export interface ExportReport {
   exported: number;
-  warnings: string[];
+  warnings: ProjectIssue[];
 }
 
 export interface ImportPreviewItem {
@@ -132,6 +138,8 @@ export interface ImportPreviewItem {
   suggested_path: string;
   has_history: boolean;
   has_draft: boolean;
+  /** Files outside the version history (local settings such as .env) carried in the package. */
+  local_files: number;
   registered: boolean;
 }
 
@@ -146,5 +154,5 @@ export type ImportTargetState = "missing" | "empty" | "files" | "repo";
 
 export interface ImportReport {
   imported: string[];
-  errors: string[];
+  errors: ProjectIssue[];
 }

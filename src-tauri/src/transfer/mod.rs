@@ -1,6 +1,10 @@
-//! Export / import of everything Project Hub knows, for moving to another computer.
+//! Export / import of everything Project Hub knows, for moving to another computer: each project as
+//! it is, ready to use on the new one after its dependencies are installed again.
 //! The package is a zip: `manifest.json`, one git bundle per project (all versions, save records and
-//! unsaved changes) and the per-project operation logs.
+//! unsaved changes), the local files the history leaves out (see `local_files`) and the per-project
+//! operation logs.
+
+mod local_files;
 
 use chrono::{DateTime, Utc};
 use git_service::GitService;
@@ -39,14 +43,30 @@ pub struct ExportedProject {
     pub remote_url: Option<String>,
     pub bundle: Option<String>,
     pub has_draft: bool,
+    /// Files outside the version history, under `files/<id>/` (missing in older packages).
+    #[serde(default)]
+    pub local_files: Vec<String>,
     #[serde(default)]
     pub logs: Vec<String>,
+}
+
+/// Something that went wrong with one project; `message` is an error code the UI translates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectIssue {
+    pub project: String,
+    pub message: String,
+}
+
+impl ProjectIssue {
+    fn new(project: &str, message: impl Into<String>) -> Self {
+        Self { project: project.to_string(), message: message.into() }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportReport {
     pub exported: usize,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<ProjectIssue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +77,7 @@ pub struct ImportPreviewItem {
     pub suggested_path: String,
     pub has_history: bool,
     pub has_draft: bool,
+    pub local_files: usize,
     pub registered: bool,
 }
 
@@ -77,7 +98,7 @@ pub struct ImportItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportReport {
     pub imported: Vec<String>,
-    pub errors: Vec<String>,
+    pub errors: Vec<ProjectIssue>,
 }
 
 /// What a target folder looks like before importing into it.
@@ -118,13 +139,12 @@ fn scratch_dir(kind: &str) -> Result<PathBuf, String> {
 }
 
 fn zip_error(error: zip::result::ZipError) -> String {
-    format!("Package error: {error}")
+    format!("PACKAGE_ERROR:{error}")
 }
 
 pub fn export(
     out_path: &Path,
     projects: &[Project],
-    include_history: bool,
     author_name: &str,
     author_email: &str,
     git: &GitService,
@@ -133,7 +153,7 @@ pub fn export(
     let scratch = scratch_dir("export")?;
     let partial_path = out_path.with_extension("partial");
     let result = (|| {
-        let file = File::create(&partial_path).map_err(|e| format!("Cannot create the export file: {e}"))?;
+        let file = File::create(&partial_path).map_err(|e| format!("EXPORT_CREATE_FAILED:{e}"))?;
         let mut zip = ZipWriter::new(file);
         let stored = SimpleFileOptions::default()
             .compression_method(CompressionMethod::Stored)
@@ -151,12 +171,13 @@ pub fn export(
                 remote_url: None,
                 bundle: None,
                 has_draft: false,
+                local_files: Vec::new(),
                 logs: Vec::new(),
             };
 
             if project.missing {
-                warnings.push(format!("{}: folder not found, only the project entry was exported.", project.name));
-            } else if include_history && project.is_git_repo {
+                warnings.push(ProjectIssue::new(&project.name, "EXPORT_FOLDER_MISSING"));
+            } else if project.is_git_repo {
                 let bundle_path = scratch.join(format!("{}.bundle", project.id));
                 match git.create_bundle(&project.path, &bundle_path) {
                     Ok(meta) => {
@@ -170,9 +191,19 @@ pub fn export(
                         entry.has_draft = meta.has_draft;
                         entry.bundle = Some(name);
                     }
-                    Err(error) => warnings.push(format!("{}: {}", project.name, error)),
+                    Err(error) => warnings.push(ProjectIssue::new(&project.name, error)),
                 }
                 entry.remote_url = git.get_remote_url(&project.path, "origin");
+            }
+
+            if !project.missing {
+                let root = Path::new(&project.path);
+                let carried = local_files::collect(root, project.is_git_repo, git)
+                    .and_then(|files| local_files::write(&mut zip, &project.id, root, &files).map(|()| files));
+                match carried {
+                    Ok(files) => entry.local_files = files,
+                    Err(error) => warnings.push(ProjectIssue::new(&project.name, error)),
+                }
             }
 
             if let Some(log_dir) = log_dir_for(&project.id).filter(|dir| dir.is_dir()) {
@@ -229,7 +260,7 @@ fn is_safe_id(id: &str) -> bool {
 }
 
 fn open_package(path: &Path) -> Result<(ZipArchive<File>, ExportManifest), String> {
-    let file = File::open(path).map_err(|e| format!("Cannot open the package: {e}"))?;
+    let file = File::open(path).map_err(|e| format!("PACKAGE_OPEN_FAILED:{e}"))?;
     let mut archive = ZipArchive::new(file).map_err(|_| "EXPORT_NOT_PROJECT_HUB".to_string())?;
     let mut content = String::new();
     archive
@@ -267,6 +298,7 @@ pub fn preview(path: &Path, service: &ProjectService) -> Result<ImportPreview, S
                 suggested_path: if usable { project.original_path.clone() } else { String::new() },
                 has_history: project.bundle.is_some(),
                 has_draft: project.has_draft,
+                local_files: project.local_files.len(),
                 registered: known
                     .iter()
                     .any(|p| (p.id == project.id || same_path(&p.path, &project.original_path)) && !p.missing),
@@ -316,11 +348,12 @@ fn import_one(
             git.restore_bundle(Path::new(target), &bundle_path, head, project.remote_url.as_deref())?;
             let _ = fs::remove_file(&bundle_path);
         }
-        (None, TargetState::Missing) => {
+        (None, TargetState::Missing) if project.local_files.is_empty() => {
             return Err("EXPORT_NO_FILES".to_string());
         }
-        (None, _) => {}
+        (None, _) => fs::create_dir_all(target).map_err(|e| e.to_string())?,
     }
+    local_files::restore(archive, &project.id, Path::new(target), &project.local_files)?;
 
     // Exported without history: start recording from the files already in the folder.
     git.ensure_versioned(target)?;
@@ -360,12 +393,12 @@ pub fn apply(
         };
         let target = item.target_path.trim();
         if target.is_empty() {
-            report.errors.push(format!("{}: no target folder chosen.", project.name));
+            report.errors.push(ProjectIssue::new(&project.name, "IMPORT_NO_TARGET"));
             continue;
         }
         match import_one(&mut archive, project, target, &scratch, service, git, &log_dir_for) {
             Ok(()) => report.imported.push(project.name.clone()),
-            Err(error) => report.errors.push(format!("{}: {}", project.name, error)),
+            Err(error) => report.errors.push(ProjectIssue::new(&project.name, error)),
         }
     }
 
@@ -391,9 +424,21 @@ mod tests {
         git(&source, &["config", "user.email", "t@t.com"]);
         git(&source, &["config", "user.name", "T"]);
         fs::write(source.join("a.txt"), "saved").unwrap();
+        fs::write(source.join(".gitignore"), ".env\nconfig/secret.json\nnode_modules/\n").unwrap();
         git(&source, &["add", "."]);
         git(&source, &["commit", "-m", "first"]);
         fs::write(source.join("wip.txt"), "unsaved").unwrap();
+        // Local files the history leaves out: carried along, except what `npm install` rebuilds.
+        fs::write(source.join(".env"), "KEY=secret").unwrap();
+        fs::create_dir_all(source.join("config")).unwrap();
+        fs::write(source.join("config/secret.json"), "{}").unwrap();
+        fs::create_dir_all(source.join("node_modules/pkg")).unwrap();
+        fs::write(source.join("node_modules/pkg/index.js"), "x").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(source.join(".env"), fs::Permissions::from_mode(0o600)).unwrap();
+        }
 
         let logs_root = tempfile::TempDir::new().unwrap();
         let storage_root = tempfile::TempDir::new().unwrap();
@@ -407,7 +452,7 @@ mod tests {
         let package = storage_root.path().join("backup.phub");
         let git_service = GitService::new();
         let logs_for = |id: &str| Some(logs_root.path().join(id));
-        let report = export(&package, &service.list_projects(), true, "Me", "me@x.com", &git_service, logs_for).unwrap();
+        let report = export(&package, &service.list_projects(), "Me", "me@x.com", &git_service, logs_for).unwrap();
         assert_eq!(report.exported, 1);
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
 
@@ -419,6 +464,7 @@ mod tests {
         assert_eq!(preview_result.author_name, "Me");
         assert!(preview_result.projects[0].has_history && preview_result.projects[0].has_draft);
         assert!(!preview_result.projects[0].registered);
+        assert_eq!(preview_result.projects[0].local_files, 2);
 
         let new_logs = tempfile::TempDir::new().unwrap();
         let target = new_storage_root.path().join("restored-demo");
@@ -431,11 +477,52 @@ mod tests {
         assert!(import_report.errors.is_empty(), "{:?}", import_report.errors);
         assert_eq!(fs::read_to_string(target.join("a.txt")).unwrap(), "saved");
         assert_eq!(fs::read_to_string(target.join("wip.txt")).unwrap(), "unsaved");
+        assert_eq!(fs::read_to_string(target.join(".env")).unwrap(), "KEY=secret");
+        assert!(target.join("config/secret.json").exists());
+        assert!(!target.join("node_modules").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(target.join(".env")).unwrap().permissions().mode() & 0o777, 0o600);
+        }
         assert!(new_logs.path().join(&project.id).join("project-hub.log").exists());
         let listed = fresh.list_projects();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, project.id);
         assert!(listed[0].is_git_repo);
+    }
+
+    #[test]
+    fn moves_a_folder_without_history_and_keeps_existing_files() {
+        let source_root = tempfile::TempDir::new().unwrap();
+        let source = source_root.path().join("plain");
+        fs::create_dir_all(source.join("src")).unwrap();
+        fs::create_dir_all(source.join("node_modules/pkg")).unwrap();
+        fs::write(source.join("src/main.ts"), "code").unwrap();
+        fs::write(source.join(".env"), "KEY=old-computer").unwrap();
+        fs::write(source.join("node_modules/pkg/index.js"), "x").unwrap();
+
+        let storage_root = tempfile::TempDir::new().unwrap();
+        let mut service = ProjectService::new(storage_root.path().join("projects.json").to_str().unwrap());
+        let project = service.add_project(source.to_str().unwrap()).unwrap();
+        assert!(!project.is_git_repo);
+        let package = storage_root.path().join("backup.phub");
+        let git_service = GitService::new();
+        let report = export(&package, &service.list_projects(), "", "", &git_service, |_| None).unwrap();
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+
+        // The new computer already has its own .env in the chosen folder.
+        let new_root = tempfile::TempDir::new().unwrap();
+        let target = new_root.path().join("plain");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join(".env"), "KEY=new-computer").unwrap();
+        let mut fresh = ProjectService::new(new_root.path().join("projects.json").to_str().unwrap());
+        let items = vec![ImportItem { id: project.id.clone(), target_path: target.to_string_lossy().to_string() }];
+        let (import_report, _) = apply(&package, &items, &mut fresh, &git_service, |_| None).unwrap();
+        assert!(import_report.errors.is_empty(), "{:?}", import_report.errors);
+        assert_eq!(fs::read_to_string(target.join("src/main.ts")).unwrap(), "code");
+        assert_eq!(fs::read_to_string(target.join(".env")).unwrap(), "KEY=new-computer");
+        assert!(!target.join("node_modules").exists());
     }
 
     #[test]

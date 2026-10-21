@@ -9,14 +9,13 @@ import { useAccount } from "../../composables/useAccount";
 import { useToast } from "../../composables/useToast";
 import { useI18n, type TranslationKey } from "../../composables/useI18n";
 import { errorText } from "../../utils/errors";
-import type { ExportReport, ImportPreview, ImportReport, ImportTargetState } from "../../types";
+import type { ExportReport, ImportPreview, ImportReport, ImportTargetState, ProjectIssue } from "../../types";
 
 const { loadProjects, autoRelocate } = useProjectStore();
 const { refresh: refreshAccount } = useAccount();
 const toast = useToast();
 const { t } = useI18n();
 
-const includeHistory = ref(true);
 const exporting = ref(false);
 const importing = ref(false);
 const loadingPreview = ref(false);
@@ -34,6 +33,7 @@ interface Row {
   include: boolean;
   hasHistory: boolean;
   hasDraft: boolean;
+  localFiles: number;
   registered: boolean;
 }
 const rows = ref<Row[]>([]);
@@ -51,9 +51,9 @@ async function exportAll() {
   if (!path) return;
   exporting.value = true;
   try {
-    const report = await invoke<ExportReport>("export_data", { path, includeHistory: includeHistory.value });
+    const report = await invoke<ExportReport>("export_data", { path });
     if (report.warnings.length > 0) {
-      toast.warning(t("exportDoneWithWarnings", { count: report.exported }), { detail: report.warnings.join("\n") });
+      toast.warning(t("exportDoneWithWarnings", { count: report.exported }), { detail: describeIssues(report.warnings) });
     } else {
       toast.success(t("exportDone", { count: report.exported }), { detail: path });
     }
@@ -62,6 +62,11 @@ async function exportAll() {
   } finally {
     exporting.value = false;
   }
+}
+
+/** One line per project: its name and what went wrong, in the chosen language. */
+function describeIssues(issues: ProjectIssue[]) {
+  return issues.map((issue) => `${issue.project}: ${errorText(issue.message, t)}`).join("\n");
 }
 
 async function stateOf(path: string): Promise<ImportTargetState> {
@@ -87,6 +92,7 @@ async function chooseImport() {
         include: !project.registered,
         hasHistory: project.has_history,
         hasDraft: project.has_draft,
+        localFiles: project.local_files,
         registered: project.registered,
       }))
     );
@@ -115,7 +121,10 @@ async function refreshState(row: Row) {
 function stateKey(row: Row): TranslationKey {
   if (!row.target.trim()) return "importStateChoose";
   if (row.state === "repo") return "importStateRepo";
-  if (!row.hasHistory) return row.state === "missing" ? "importStateNoData" : "importStateLinkOnly";
+  if (!row.hasHistory) {
+    if (row.localFiles > 0) return "importStateRestoreFiles";
+    return row.state === "missing" ? "importStateNoData" : "importStateLinkOnly";
+  }
   if (row.state === "files") return "importStateFiles";
   return "importStateRestore";
 }
@@ -146,7 +155,7 @@ async function runImport() {
     await autoRelocate();
     await refreshAccount().catch(() => undefined);
     if (report.errors.length > 0) {
-      toast.warning(t("importDoneWithErrors", { count: report.imported.length }), { detail: report.errors.join("\n"), duration: 0 });
+      toast.warning(t("importDoneWithErrors", { count: report.imported.length }), { detail: describeIssues(report.errors), duration: 0 });
     } else {
       toast.success(t("importDone", { count: report.imported.length }));
     }
@@ -164,10 +173,6 @@ async function runImport() {
     <label class="setting-label">{{ t('transferSection') }}</label>
     <div class="setting-card space-y-3">
       <div class="setting-description mt-0">{{ t('transferDescription') }}</div>
-      <label class="flex items-center gap-2 text-xs text-muted cursor-pointer select-none">
-        <input v-model="includeHistory" type="checkbox" class="accent-primary" />
-        {{ t('exportIncludeHistory') }}
-      </label>
       <div class="log-actions">
         <button class="secondary-btn action-btn" :disabled="exporting" @click="exportAll">
           <Loader2 v-if="exporting" :size="14" class="spin" />
@@ -203,6 +208,7 @@ async function runImport() {
           <span class="text-sm font-medium text-ink truncate">{{ row.name }}</span>
           <span v-if="row.registered" class="rounded bg-surface-raised px-1.5 text-[11px] text-muted">{{ t('importAlreadyAdded') }}</span>
           <span v-if="row.hasDraft" class="rounded bg-warning/15 px-1.5 text-[11px] text-warning">{{ t('importHasDraft') }}</span>
+          <span v-if="row.localFiles" class="rounded bg-surface-raised px-1.5 text-[11px] text-muted">{{ t('importHasLocalFiles', { count: row.localFiles }) }}</span>
         </div>
         <div class="mt-1 truncate pl-6 text-[11px] text-text-muted" :title="row.original">{{ t('importOriginalPath') }} {{ row.original }}</div>
         <div class="mt-2 flex gap-2 pl-6">

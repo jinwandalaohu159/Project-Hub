@@ -3,7 +3,7 @@ import { Download, Loader2, Sparkles, X } from "lucide-vue-next";
 import { useUpdater } from "../composables/useUpdater";
 import { useI18n } from "../composables/useI18n";
 
-const { info, currentVersion, showBanner, installing, progress, dialogOpen, installNow, dismiss } = useUpdater();
+const { info, currentVersion, showBanner, installing, dialogOpen, installNow, dismiss } = useUpdater();
 const { t } = useI18n();
 </script>
 
@@ -17,11 +17,9 @@ const { t } = useI18n();
       </span>
       <button v-if="info.notes && !installing" class="banner-link" @click="dialogOpen = true">{{ t('updateWhatsNew') }}</button>
       <div class="flex-1" />
-      <template v-if="installing">
-        <div class="banner-progress"><span :style="{ transform: `scaleX(${progress})` }" /></div>
-        <span class="text-xs text-muted tabular-nums w-10 text-right">{{ Math.round(progress * 100) }}%</span>
-        <Loader2 :size="14" class="spin text-primary" />
-      </template>
+      <button v-if="installing" class="banner-link inline-flex items-center gap-1.5" @click="dialogOpen = true">
+        <Loader2 :size="13" class="spin" />{{ t('updateInProgress') }}
+      </button>
       <template v-else>
         <button class="btn btn-ghost btn-sm" @click="dismiss">{{ t('updateLater') }}</button>
         <button class="btn btn-primary btn-sm" @click="installNow">
@@ -71,22 +69,6 @@ const { t } = useI18n();
 .banner-close:hover {
   background: var(--color-surface-raised);
   color: var(--color-ink);
-}
-
-.banner-progress {
-  width: 160px;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--color-surface-raised);
-}
-
-.banner-progress span {
-  display: block;
-  height: 100%;
-  background: var(--color-primary);
-  transform-origin: left;
-  transition: transform var(--dur) var(--ease-out);
 }
 
 .banner-enter-active,

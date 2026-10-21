@@ -44,7 +44,7 @@ const status = computed(() => {
         </div>
         <button v-if="available" class="btn btn-primary btn-sm shrink-0" :disabled="installing" @click="installNow">
           <Loader2 v-if="installing" :size="13" class="spin" /><Download v-else :size="13" />
-          {{ installing ? t('updateDownloading') : t('updateNow') }}
+          {{ installing ? t('updateInProgress') : t('updateNow') }}
         </button>
         <button v-else class="btn btn-secondary btn-sm shrink-0" :disabled="checking" @click="checkNow">
           <Loader2 v-if="checking" :size="13" class="spin" /><RefreshCw v-else :size="13" />

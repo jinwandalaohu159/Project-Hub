@@ -11,7 +11,6 @@ use tauri::Manager;
 pub(crate) async fn export_data(
     app: tauri::AppHandle,
     path: String,
-    include_history: bool,
 ) -> Result<transfer::ExportReport, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -25,7 +24,6 @@ pub(crate) async fn export_data(
         transfer::export(
             std::path::Path::new(&path),
             &projects,
-            include_history,
             &settings.author_name,
             &settings.author_email,
             &git,

@@ -20,6 +20,9 @@ export interface UpdateInfo {
 }
 
 /** Checks are cheap (see update/check.rs), so a new release shows up within minutes. */
+/** Where an update stands once the user starts it; after `restarting` the app quits. */
+export type UpdatePhase = "idle" | "downloading" | "restarting";
+
 const AUTO_CHECK_INTERVAL_MS = 2 * 60 * 1000;
 /** Coming back to the window checks right away, unless a check just ran. */
 const FOCUS_CHECK_MIN_GAP_MS = 30 * 1000;
@@ -29,6 +32,7 @@ const releasesUrl = ref("");
 const info = ref<UpdateInfo | null>(null);
 const checking = ref(false);
 const installing = ref(false);
+const phase = ref<UpdatePhase>("idle");
 const downloaded = ref(0);
 const total = ref(0);
 const lastChecked = ref<number | null>(null);
@@ -73,9 +77,11 @@ export function useUpdater() {
     const update = info.value;
     if (!update?.asset_url || !update.asset_name || installing.value) return null;
     installing.value = true;
+    phase.value = "downloading";
     downloaded.value = 0;
     total.value = update.asset_size;
-    const unlisten = await listen<{ downloaded: number; total: number }>("update-progress", (event) => {
+    const unlisten = await listen<{ phase: UpdatePhase; downloaded: number; total: number }>("update-progress", (event) => {
+      phase.value = event.payload.phase;
       downloaded.value = event.payload.downloaded;
       total.value = event.payload.total || update.asset_size;
     });
@@ -86,14 +92,19 @@ export function useUpdater() {
         name: update.asset_name,
         size: update.asset_size,
       });
+    } catch (error) {
+      phase.value = "idle";
+      throw error;
     } finally {
       unlisten();
       installing.value = false;
     }
   }
 
-  /** Installs the available update, reporting a failure; on success the app quits and reopens. */
+  /** Installs the available update in the update dialog, which shows the progress; a failure is
+   *  reported, and on success the app quits and reopens. */
   async function installNow() {
+    dialogOpen.value = true;
     try {
       await install();
     } catch (error) {
@@ -136,6 +147,7 @@ export function useUpdater() {
     info,
     checking,
     installing,
+    phase,
     downloaded,
     total,
     progress,

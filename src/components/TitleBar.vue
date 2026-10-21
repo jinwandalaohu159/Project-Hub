@@ -25,7 +25,7 @@ const { t } = useI18n()
 const mac = isMac()
 const showWindowControls = isTauri() && !mac
 const { maximized, fullscreen } = useWindowState()
-const { info, available, installing, progress, dialogOpen } = useUpdater()
+const { info, available, installing, phase, progress, dialogOpen } = useUpdater()
 
 function minimize() {
   getCurrentWindow().minimize()
@@ -50,9 +50,11 @@ function closeWindow() {
     <div class="title-bar-actions">
       <Tooltip v-if="available && info" :text="t('updateAvailable', { version: info.latest })" position="bottom">
         <button class="title-bar-update" @click="dialogOpen = true">
-          <Loader2 v-if="installing" :size="13" class="spin" />
+          <Loader2 v-if="installing || phase !== 'idle'" :size="13" class="spin" />
           <ArrowDownToLine v-else :size="13" />
-          <span>{{ installing ? `${Math.round(progress * 100)}%` : t('updateButton') }}</span>
+          <span>{{
+            phase === 'restarting' ? t('updateRestartingShort') : installing ? `${Math.round(progress * 100)}%` : t('updateButton')
+          }}</span>
         </button>
       </Tooltip>
       <Tooltip :text="t('debugPanel')" position="bottom">

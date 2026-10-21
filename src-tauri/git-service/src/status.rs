@@ -287,6 +287,16 @@ impl GitService {
         Ok(())
     }
 
+    /// Untracked files the ignore rules keep out of the history, relative to the project with '/'
+    /// separators. A wholly ignored folder is listed once, as "folder/".
+    pub fn ignored_paths(&self, repo_path: &str) -> Result<Vec<String>, String> {
+        let output = self.run_git(
+            repo_path,
+            &["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
+        )?;
+        Ok(output.split('\0').filter(|path| !path.is_empty()).map(str::to_string).collect())
+    }
+
     pub(crate) fn is_ignored_dir_name(&self, name: &str) -> bool {
         IGNORED_DIRS.contains(&name)
     }
