@@ -1,5 +1,8 @@
-//! The tools agents can call: listing projects, status, diff, saving and history. A project is
-//! named by id, by any path inside it, or by its name.
+//! The tools agents can call: listing projects, status, diff, saving, history and the rules that
+//! hide files from versions. A project is
+//! named by id, by any path inside it, or by its name. Each tool says whether it only reads
+//! (`annotations.readOnlyHint`); the settings page lists the same definitions and may try out the
+//! read-only ones.
 
 use super::McpHost;
 use git_service::GitService;
@@ -17,7 +20,8 @@ pub(super) fn tools() -> Value {
         {
             "name": "list_projects",
             "description": "List the projects managed by Project Hub.",
-            "inputSchema": { "type": "object", "properties": {} }
+            "inputSchema": { "type": "object", "properties": {} },
+            "annotations": read_only("List projects")
         },
         {
             "name": "get_status",
@@ -26,7 +30,8 @@ pub(super) fn tools() -> Value {
                 "type": "object",
                 "properties": { "project": project },
                 "required": ["project"]
-            }
+            },
+            "annotations": read_only("Project status")
         },
         {
             "name": "get_diff",
@@ -38,7 +43,8 @@ pub(super) fn tools() -> Value {
                     "max_bytes": { "type": "integer", "description": "Truncate the patch after this many bytes (default 60000)." }
                 },
                 "required": ["project"]
-            }
+            },
+            "annotations": read_only("Unsaved changes")
         },
         {
             "name": "save_version",
@@ -51,6 +57,14 @@ pub(super) fn tools() -> Value {
                     "description": { "type": "string", "description": "Optional details: what changed and why." }
                 },
                 "required": ["project", "title"]
+            },
+            // Adds a record; nothing existing is changed or lost.
+            "annotations": {
+                "title": "Save version",
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false
             }
         },
         {
@@ -63,9 +77,66 @@ pub(super) fn tools() -> Value {
                     "limit": { "type": "integer", "description": "Number of records (default 20, max 100)." }
                 },
                 "required": ["project"]
+            },
+            "annotations": read_only("Save history")
+        },
+        {
+            "name": "get_ignore_rules",
+            "description": "Show which files are hidden from versions: the project's .gitignore rules, Project Hub's default rules and what is hidden right now.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": project,
+                    "limit": { "type": "integer", "description": "Hidden paths to list (default 100, max 1000)." }
+                },
+                "required": ["project"]
+            },
+            "annotations": read_only("Hidden files")
+        },
+        {
+            "name": "update_ignore_rules",
+            "description": "Add or remove .gitignore rules (gitignore syntax, e.g. \"node_modules/\", \"*.log\", \"/build/\"). Files that earlier records contain and the new rules hide stop being saved but stay on disk. Call save_version afterwards to record the change.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": project,
+                    "add": { "type": "array", "items": { "type": "string" }, "description": "Rules to add." },
+                    "remove": { "type": "array", "items": { "type": "string" }, "description": "Rules to remove, written exactly as they appear." }
+                },
+                "required": ["project"]
+            },
+            // Changes .gitignore; files stay on disk and the records keep them.
+            "annotations": {
+                "title": "Change hidden files",
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false
             }
         }
     ])
+}
+
+fn read_only(title: &str) -> Value {
+    json!({ "title": title, "readOnlyHint": true, "openWorldHint": false })
+}
+
+fn is_read_only(name: &str) -> bool {
+    tools()
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|tool| tool["name"] == name)
+        .is_some_and(|tool| tool["annotations"]["readOnlyHint"] == true)
+}
+
+/// Runs a tool for the settings page's "try it". Only read-only tools: trying must never change
+/// a project.
+pub(super) fn preview_tool(host: &dyn McpHost, name: &str, args: &Value) -> Result<String, String> {
+    if !is_read_only(name) {
+        return Err(format!("MCP_TOOL_NOT_PREVIEWABLE:{name}"));
+    }
+    call_tool(host, name, args)
 }
 
 fn is_inside(path: &str, root: &str) -> bool {
@@ -119,6 +190,13 @@ fn resolve_project(host: &dyn McpHost, query: &str) -> Result<Project, String> {
 
 fn str_arg<'a>(args: &'a Value, key: &str) -> &'a str {
     args.get(key).and_then(Value::as_str).unwrap_or_default()
+}
+
+fn str_list(args: &Value, key: &str) -> Vec<String> {
+    args.get(key)
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .unwrap_or_default()
 }
 
 pub(super) fn call_tool(host: &dyn McpHost, name: &str, args: &Value) -> Result<String, String> {
@@ -207,6 +285,48 @@ pub(super) fn call_tool(host: &dyn McpHost, name: &str, args: &Value) -> Result<
             let history = git.get_log(&project.path, limit)?;
             serde_json::to_string_pretty(&history).map_err(|e| e.to_string())
         }
+        "get_ignore_rules" => {
+            let project = resolve_project(host, str_arg(args, "project"))?;
+            let limit = args
+                .get("limit")
+                .and_then(Value::as_u64)
+                .map(|n| n.clamp(1, 1000) as usize)
+                .unwrap_or(100);
+            let rules = git.ignore_rules(&project.path, limit)?;
+            serde_json::to_string_pretty(&json!({
+                "project": project.name,
+                "gitignore_rules": rules.rules,
+                "project_hub_defaults": rules.defaults,
+                "hidden_now": rules.hidden,
+                "hidden_total": rules.hidden_total,
+            }))
+            .map_err(|e| e.to_string())
+        }
+        "update_ignore_rules" => {
+            let project = resolve_project(host, str_arg(args, "project"))?;
+            let (add, remove) = (str_list(args, "add"), str_list(args, "remove"));
+            if add.is_empty() && remove.is_empty() {
+                return Err("Give \"add\" and/or \"remove\".".to_string());
+            }
+            let update = git.update_ignore_rules(&project.path, &add, &remove)?;
+            if !update.added.is_empty() || !update.removed.is_empty() {
+                let summary = format!("hide {:?}, unhide {:?}", update.added, update.removed);
+                host.on_hiding_changed(&project, &summary);
+            }
+            let next = if update.added.is_empty() && update.removed.is_empty() {
+                "Nothing changed."
+            } else {
+                "Call save_version to record the new rules."
+            };
+            serde_json::to_string_pretty(&json!({
+                "added": update.added,
+                "removed": update.removed,
+                "unchanged": update.unchanged,
+                "stopped_saving": update.stopped_saving,
+                "next": next,
+            }))
+            .map_err(|e| e.to_string())
+        }
         other => Err(format!("UNKNOWN_TOOL:{other}")),
     }
 }
@@ -236,6 +356,46 @@ mod tests {
 
         let again = call(&host, "save_version", json!({ "project": "Demo", "title": "noop" }));
         assert!(again["result"]["content"][0]["text"].as_str().unwrap().starts_with("Nothing to save"));
+    }
+
+    #[test]
+    fn only_read_only_tools_can_be_tried() {
+        let (host, _dir) = host_with_repo();
+        let listed = super::preview_tool(&host, "list_projects", &json!({})).unwrap();
+        assert!(listed.contains("Demo"));
+        let refused = super::preview_tool(&host, "save_version", &json!({ "project": "Demo", "title": "x" }));
+        assert!(refused.unwrap_err().starts_with("MCP_TOOL_NOT_PREVIEWABLE"));
+        assert!(host.saved.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn every_tool_says_whether_it_writes() {
+        for tool in super::tools().as_array().unwrap() {
+            assert!(tool["annotations"]["readOnlyHint"].is_boolean(), "{}", tool["name"]);
+        }
+        assert!(!super::is_read_only("save_version"));
+        assert!(super::is_read_only("get_diff"));
+    }
+
+    #[test]
+    fn agents_can_hide_files_and_save_the_rules() {
+        let (host, dir) = host_with_repo();
+        std::fs::create_dir_all(dir.path().join("dist")).unwrap();
+        std::fs::write(dir.path().join("dist").join("app.js"), "built").unwrap();
+
+        let updated = call(&host, "update_ignore_rules", json!({ "project": "Demo", "add": ["dist/"] }));
+        let text = updated["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("\"added\"") && text.contains("dist/"), "{text}");
+
+        let rules = call(&host, "get_ignore_rules", json!({ "project": "Demo" }));
+        let text = rules["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("\"gitignore_rules\"") && text.contains("dist/"), "{text}");
+
+        let saved = call(&host, "save_version", json!({ "project": "Demo", "title": "Hide build output" }));
+        assert_eq!(saved["result"]["isError"], false, "{}", saved);
+
+        let refused = call(&host, "update_ignore_rules", json!({ "project": "Demo", "add": ["*"] }));
+        assert_eq!(refused["result"]["isError"], true);
     }
 
     #[test]

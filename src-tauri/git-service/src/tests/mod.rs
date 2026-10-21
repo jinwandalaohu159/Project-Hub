@@ -7,6 +7,7 @@ use std::process::Command;
 mod branches;
 mod draft;
 mod history;
+mod ignore;
 mod remote;
 mod rewrite;
 mod status;

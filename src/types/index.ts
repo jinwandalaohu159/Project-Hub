@@ -126,6 +126,36 @@ export interface McpStatus {
   exe_path: string;
 }
 
+/** One parameter of an MCP tool, as its JSON schema describes it. */
+export interface McpToolParam {
+  type?: string;
+  description?: string;
+  items?: { type?: string };
+}
+
+/** A tool as agents get it from `tools/list`. */
+export interface McpTool {
+  name: string;
+  description: string;
+  inputSchema: { properties?: Record<string, McpToolParam>; required?: string[] };
+  annotations?: { title?: string; readOnlyHint?: boolean };
+}
+
+/** The rules that keep files out of versions (see git-service ignore.rs). */
+export interface IgnoreRules {
+  rules: string[];
+  defaults: string[];
+  hidden: string[];
+  hidden_total: number;
+}
+
+export interface IgnoreUpdate {
+  added: string[];
+  removed: string[];
+  unchanged: string[];
+  stopped_saving: string[];
+}
+
 /** Something that went wrong with one project; `message` is an error code (see utils/errors). */
 export interface ProjectIssue {
   project: string;

@@ -217,3 +217,18 @@ pub(crate) async fn git_init(state: tauri::State<'_, AppState>, repo_path: Strin
 pub(crate) async fn is_git_repo(path: String) -> Result<bool, String> {
     run_git_task(move |svc| Ok(svc.is_git_repo(&path))).await
 }
+
+/// The rules hiding files from versions and what they hide (at most `limit` paths).
+#[tauri::command]
+pub(crate) async fn get_ignore_rules(repo_path: String, limit: usize) -> Result<git_service::IgnoreRules, String> {
+    run_git_task(move |svc| svc.settled(&repo_path, |svc| svc.ignore_rules(&repo_path, limit))).await
+}
+
+#[tauri::command]
+pub(crate) async fn update_ignore_rules(
+    repo_path: String,
+    add: Vec<String>,
+    remove: Vec<String>,
+) -> Result<git_service::IgnoreUpdate, String> {
+    run_git_task(move |svc| svc.update_ignore_rules(&repo_path, &add, &remove)).await
+}

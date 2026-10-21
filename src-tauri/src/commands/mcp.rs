@@ -55,6 +55,18 @@ impl mcp::McpHost for AppHost {
             .app
             .emit(REPO_CHANGED_EVENT, serde_json::json!({ "project_id": project.id }));
     }
+
+    fn on_hiding_changed(&self, project: &project_service::Project, summary: &str) {
+        append_project_log(
+            &project.id,
+            &project.name,
+            "ignore.update",
+            &format!("{}: {} (MCP)", project.name, summary),
+        );
+        let _ = self
+            .app
+            .emit(REPO_CHANGED_EVENT, serde_json::json!({ "project_id": project.id }));
+    }
 }
 
 pub(crate) fn restart_mcp(app: &tauri::AppHandle) {
@@ -133,4 +145,19 @@ pub(crate) async fn set_mcp_config(app: tauri::AppHandle, enabled: bool, port: u
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The tools agents see, as `tools/list` returns them (names, parameters, read-only or not).
+#[tauri::command]
+pub(crate) fn get_mcp_tools() -> serde_json::Value {
+    mcp::tool_catalog()
+}
+
+/// "Try it" on the settings page: runs a read-only tool exactly as an agent would and returns its
+/// answer. Works whether or not the server is switched on.
+#[tauri::command]
+pub(crate) async fn try_mcp_tool(app: tauri::AppHandle, name: String, args: serde_json::Value) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || mcp::try_read_only_tool(&AppHost { app }, &name, &args))
+        .await
+        .map_err(|e| e.to_string())?
 }

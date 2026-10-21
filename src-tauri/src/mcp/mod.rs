@@ -17,10 +17,22 @@ use project_service::Project;
 pub use http::{endpoint, McpServer};
 pub use protocol::run_stdio;
 
+/// The tool definitions agents get from `tools/list`, for the settings page to show.
+pub fn tool_catalog() -> serde_json::Value {
+    tools::tools()
+}
+
+/// Runs a read-only tool on behalf of the settings page; refuses tools that would change anything.
+pub fn try_read_only_tool(host: &dyn McpHost, name: &str, args: &serde_json::Value) -> Result<String, String> {
+    tools::preview_tool(host, name, args)
+}
+
 pub trait McpHost: Send + Sync {
     fn projects(&self) -> Vec<Project>;
     fn identity(&self) -> Option<Identity>;
     fn on_saved(&self, project: &Project, message: &str);
+    /// The project's hiding rules changed (nothing is saved yet).
+    fn on_hiding_changed(&self, _project: &Project, _summary: &str) {}
 }
 
 /// `project-hub.exe --mcp` host: reads the same project list and settings the app uses.
@@ -38,6 +50,10 @@ impl McpHost for FileHost {
 
     fn on_saved(&self, project: &Project, message: &str) {
         crate::logs::append_project_log(&project.id, &project.name, "save.create", &format!("{}: {} (MCP)", project.name, message));
+    }
+
+    fn on_hiding_changed(&self, project: &Project, summary: &str) {
+        crate::logs::append_project_log(&project.id, &project.name, "ignore.update", &format!("{}: {} (MCP)", project.name, summary));
     }
 }
 

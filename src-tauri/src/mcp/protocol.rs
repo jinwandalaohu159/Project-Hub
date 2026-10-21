@@ -106,6 +106,6 @@ mod tests {
         assert_eq!(response["result"]["protocolVersion"], "2025-03-26");
         assert!(handle_message(&host, &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).is_none());
         let tools = handle_message(&host, &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 5);
+        assert_eq!(tools["result"]["tools"], super::super::tools::tools());
     }
 }

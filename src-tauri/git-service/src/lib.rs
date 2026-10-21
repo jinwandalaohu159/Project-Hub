@@ -18,12 +18,14 @@ mod command;
 mod draft;
 mod history;
 mod housekeeping;
+mod ignore;
 mod refs;
 mod remote;
 mod rewrite;
 mod status;
 mod sync;
 
+pub use ignore::{validate_ignore_rule, IgnoreRules, IgnoreUpdate};
 pub use remote::base64_encode;
 pub use rewrite::{RECORD_NOT_IN_VERSION, RECORD_UNDELETABLE};
 

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, ChevronDown, Copy, Eye, ListChecks, Loader2, PenLine } from "lucide-vue-next";
-import ModalShell from "../ModalShell.vue";
-import type { TranslationKey } from "../../composables/useI18n";
+import { ChevronDown, ListChecks, Loader2 } from "lucide-vue-next";
+import CodeSnippet from "./CodeSnippet.vue";
+import McpToolsDialog from "./McpToolsDialog.vue";
+import { useMcpTools } from "../../composables/useMcpTools";
 import { useToast } from "../../composables/useToast";
 import { useI18n } from "../../composables/useI18n";
 import { errorText } from "../../utils/errors";
@@ -17,18 +18,10 @@ const { t } = useI18n();
 const status = ref<McpStatus | null>(null);
 const port = ref(47821);
 const busy = ref(false);
-const copied = ref<string | null>(null);
 const showTools = ref(false);
+const { tools, load: loadTools } = useMcpTools();
 /** The connection snippets are long and only needed while setting up an agent. */
 const showSnippets = usePersistentRef("mcp-snippets-open", false);
-
-const TOOLS: Array<{ name: string; description: TranslationKey; writes: boolean }> = [
-  { name: "list_projects", description: "mcpToolListProjects", writes: false },
-  { name: "get_status", description: "mcpToolGetStatus", writes: false },
-  { name: "get_diff", description: "mcpToolGetDiff", writes: false },
-  { name: "save_version", description: "mcpToolSaveVersion", writes: true },
-  { name: "get_history", description: "mcpToolGetHistory", writes: false },
-];
 
 async function load() {
   if (!isTauri()) return;
@@ -38,6 +31,7 @@ async function load() {
 
 onMounted(() => {
   load().catch(() => undefined);
+  loadTools();
 });
 
 async function apply(enabled: boolean) {
@@ -54,7 +48,11 @@ async function apply(enabled: boolean) {
   }
 }
 
-const claudeCommand = computed(() =>
+// User scope works in every folder; the default (local) scope only in the folder it is run in.
+const claudeGlobalCommand = computed(() =>
+  status.value ? `claude mcp add --transport http --scope user project-hub ${status.value.url}` : ""
+);
+const claudeLocalCommand = computed(() =>
   status.value ? `claude mcp add --transport http project-hub ${status.value.url}` : ""
 );
 
@@ -63,18 +61,6 @@ const stdioConfig = computed(() =>
     ? JSON.stringify({ mcpServers: { "project-hub": { command: status.value.exe_path, args: ["--mcp"] } } }, null, 2)
     : ""
 );
-
-async function copy(id: string, text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    copied.value = id;
-    setTimeout(() => {
-      if (copied.value === id) copied.value = null;
-    }, 1600);
-  } catch (error) {
-    toast.error(errorText(error, t));
-  }
-}
 
 const statusLabel = computed(() => {
   if (!status.value?.enabled) return t("mcpStopped");
@@ -129,48 +115,20 @@ const statusLabel = computed(() => {
           {{ t('mcpConnect') }}
         </button>
         <Transition name="rise">
-        <div v-if="showSnippets" class="space-y-3">
-        <div class="mcp-snippet">
-          <div class="mcp-snippet-head">
-            <span>{{ t('mcpClaudeCode') }}</span>
-            <button class="mcp-copy" @click="copy('claude', claudeCommand)">
-              <Check v-if="copied === 'claude'" :size="12" /><Copy v-else :size="12" />
-            </button>
+          <div v-if="showSnippets" class="space-y-3">
+            <CodeSnippet :label="t('mcpClaudeGlobal')" :hint="t('mcpClaudeGlobalHint')" :text="claudeGlobalCommand" />
+            <CodeSnippet :label="t('mcpClaudeLocal')" :hint="t('mcpClaudeLocalHint')" :text="claudeLocalCommand" />
+            <CodeSnippet :label="t('mcpOtherAgents')" :hint="t('mcpOtherAgentsHint')" :text="stdioConfig" />
           </div>
-          <code>{{ claudeCommand }}</code>
-        </div>
-        <div class="mcp-snippet">
-          <div class="mcp-snippet-head">
-            <span>{{ t('mcpOtherAgents') }}</span>
-            <button class="mcp-copy" @click="copy('stdio', stdioConfig)">
-              <Check v-if="copied === 'stdio'" :size="12" /><Copy v-else :size="12" />
-            </button>
-          </div>
-          <code>{{ stdioConfig }}</code>
-        </div>
-        </div>
         </Transition>
         <button class="btn btn-secondary btn-sm w-full" @click="showTools = true">
-          <ListChecks :size="14" />{{ t('mcpToolsButton', { count: TOOLS.length }) }}
+          <ListChecks :size="14" />{{ t('mcpToolsButton', { count: tools.length }) }}
         </button>
       </template>
     </div>
   </div>
 
-  <ModalShell :open="showTools" :title="t('mcpToolsTitle')" :subtitle="t('mcpToolsSubtitle')" width="480px" @close="showTools = false">
-    <div class="space-y-2">
-      <div v-for="tool in TOOLS" :key="tool.name" class="tool-row">
-        <div class="flex items-center justify-between gap-2">
-          <span class="tool-name">{{ tool.name }}</span>
-          <span class="tool-badge" :class="{ writes: tool.writes }">
-            <PenLine v-if="tool.writes" :size="11" /><Eye v-else :size="11" />
-            {{ tool.writes ? t('mcpToolWrites') : t('mcpToolReads') }}
-          </span>
-        </div>
-        <p class="mt-1 text-xs leading-5 text-muted">{{ t(tool.description) }}</p>
-      </div>
-    </div>
-  </ModalShell>
+  <McpToolsDialog :open="showTools" @close="showTools = false" />
 </template>
 
 <style scoped>
@@ -241,79 +199,5 @@ const statusLabel = computed(() => {
 
 .mcp-toggle-chevron.open {
   transform: rotate(0deg);
-}
-
-.mcp-snippet {
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface);
-}
-
-.mcp-snippet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 6px 4px 10px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  color: var(--color-muted);
-  font-size: 11px;
-}
-
-.mcp-copy {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  color: var(--color-muted);
-}
-
-.mcp-copy:hover {
-  background: var(--color-surface-raised);
-  color: var(--color-ink);
-}
-
-/* Softer than the editor font at small sizes: ClearType-tuned faces, muted ink, wrapped lines. */
-.mcp-snippet code {
-  display: block;
-  padding: 8px 10px;
-  color: color-mix(in srgb, var(--color-ink) 78%, var(--color-muted));
-  font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, "Ubuntu Mono", monospace;
-  font-size: 11.5px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-all;
-  -webkit-font-smoothing: auto;
-}
-
-.tool-row {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 10px;
-  background: var(--color-canvas);
-  padding: 10px 12px;
-}
-
-.tool-name {
-  color: var(--color-ink);
-  font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
-  font-size: 12.5px;
-}
-
-.tool-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border-radius: 999px;
-  background: var(--color-surface-raised);
-  padding: 1px 8px;
-  color: var(--color-muted);
-  font-size: 11px;
-}
-
-.tool-badge.writes {
-  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
-  color: var(--color-primary);
 }
 </style>

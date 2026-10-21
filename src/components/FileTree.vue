@@ -8,15 +8,18 @@ import { useConfirm } from "../composables/useConfirm";
 import { useToast } from "../composables/useToast";
 import { useFileTreeDrag } from "../composables/useFileTreeDrag";
 import { useFileTreeWatcher } from "../composables/useFileTreeWatcher";
+import { useIgnoreRules } from "../composables/useIgnoreRules";
 import { errorText } from "../utils/errors";
 import { dirname, isChildPath, replacePathPrefix } from "../utils/path";
 import { findNode, moveNode, removeNode } from "../utils/fileTree";
+import { ignoreRuleFor } from "../utils/ignoreRules";
 import { watch, ref } from "vue";
 import FileTreeNode from "./FileTreeNode.vue";
 import Tooltip from "./Tooltip.vue";
 import ContextMenu from "./ContextMenu.vue";
 import NamePromptDialog from "./NamePromptDialog.vue";
-import { FilePlus, FolderPlus, RefreshCw } from "lucide-vue-next";
+import IgnoreRulesDialog from "./IgnoreRulesDialog.vue";
+import { EyeOff, FilePlus, FolderPlus, RefreshCw } from "lucide-vue-next";
 
 const {
   fileTree,
@@ -41,6 +44,8 @@ const { t } = useI18n();
 const { notifyWorkingTreeChanged } = useProjectEvents();
 const { confirm } = useConfirm();
 const toast = useToast();
+const { update: updateIgnoreRules } = useIgnoreRules();
+const showIgnoreRules = ref(false);
 const treeRoot = ref<HTMLElement | null>(null);
 const fileTreeBody = ref<HTMLElement | null>(null);
 const namePrompt = ref<InstanceType<typeof NamePromptDialog> | null>(null);
@@ -272,6 +277,14 @@ async function dropNodeIntoDirectory(targetDirectoryPath: string, sourcePath: st
   });
 }
 
+/** "Stop saving" in the menu: one rule that hides exactly this file or folder. */
+async function stopSaving(node: FileNode) {
+  closeContextMenu();
+  const project = selectedProject.value;
+  const rule = project ? ignoreRuleFor(node.path, project.path, node.is_dir) : null;
+  if (project && rule) await updateIgnoreRules(project, [rule]);
+}
+
 function openNodeContextMenu(event: MouseEvent, node: FileNode) {
   activateNode(node);
   contextMenu.value = { x: event.clientX, y: event.clientY, node };
@@ -309,6 +322,15 @@ function closeContextMenu() {
             @click.stop="createNewFolder()"
           >
             <FolderPlus :size="15" />
+          </button>
+        </Tooltip>
+        <Tooltip :text="t('ignoreRules')" position="bottom">
+          <button
+            class="w-7 h-7 flex items-center justify-center rounded-md text-muted hover:text-ink hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            :disabled="!selectedProject || selectedProject.missing"
+            @click.stop="showIgnoreRules = true"
+          >
+            <EyeOff :size="15" />
           </button>
         </Tooltip>
         <Tooltip :text="t('refreshFiles')" position="bottom">
@@ -382,6 +404,7 @@ function closeContextMenu() {
         <button class="menu-item" @click="createNewFolder(contextMenu.node)">{{ t('newFolder') }}</button>
         <div class="menu-separator" />
         <button class="menu-item" @click="renameNode(contextMenu.node)">{{ t('rename') }}</button>
+        <button class="menu-item" @click="stopSaving(contextMenu.node)">{{ t('ignoreFile') }}</button>
         <div class="menu-separator" />
         <button class="menu-item menu-item-danger" @click="requestDeleteNode(contextMenu.node)">{{ t('delete') }}</button>
       </template>
@@ -394,5 +417,6 @@ function closeContextMenu() {
       {{ draggingNode.name }}
     </div>
     <NamePromptDialog ref="namePrompt" @settled="focusTree" />
+    <IgnoreRulesDialog :open="showIgnoreRules" @close="showIgnoreRules = false" />
   </aside>
 </template>

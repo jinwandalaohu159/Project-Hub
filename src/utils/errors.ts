@@ -63,6 +63,11 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   UPDATE_RATE_LIMITED: "errorUpdateRateLimited",
   RECORD_UNDELETABLE: "errorRecordUndeletable",
   RECORD_NOT_IN_VERSION: "errorRecordNotInVersion",
+  IGNORE_RULE_EMPTY: "errorIgnoreRuleEmpty",
+  IGNORE_RULE_MULTILINE: "errorIgnoreRuleMultiline",
+  IGNORE_RULE_COMMENT: "errorIgnoreRuleComment",
+  IGNORE_RULE_TOO_BROAD: "errorIgnoreRuleTooBroad",
+  MCP_TOOL_NOT_PREVIEWABLE: "errorMcpToolNotPreviewable",
 };
 
 const PATTERN_KEYS: Array<[RegExp, TranslationKey]> = [
