@@ -1,0 +1,74 @@
+name: Build cache
+
+# Keeps the compiled Rust dependencies that release builds start from (see release.yml).
+#
+# GitHub lets a tag's workflow read caches saved on the default branch, but never caches saved by
+# another tag, so release builds cannot leave a cache for the next release themselves. This
+# workflow compiles every release target on main and saves the cache there instead:
+#   - on pushes that can change what gets compiled (every release bumps Cargo.lock),
+#   - weekly, because GitHub deletes caches that go unused for 7 days and the stable toolchain
+#     moves on,
+#   - by hand: Actions -> Build cache -> Run workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src-tauri/**/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+      - ".github/workflows/build-cache.yml"
+      - ".github/workflows/release.yml"
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: build-cache
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      # Must list the same targets and runners as release.yml, or releases miss their cache.
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the Linux build dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libxdo-dev libssl-dev patchelf file
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Same shared key as release.yml: that is what lets releases find this cache.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: release-${{ matrix.target }}
+
+      - run: npm ci
+
+      # The same release binary a release builds; packaging is not needed to fill the cache.
+      - name: Compile
+        run: npx tauri build --target ${{ matrix.target }} --no-bundle

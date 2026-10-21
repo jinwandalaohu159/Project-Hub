@@ -99,10 +99,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Starts from the dependencies compiled on main by build-cache.yml (same shared key). A tag
+      # cannot pass a cache on to the next tag, so saving here would only cost time.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: ${{ matrix.target }}
+          shared-key: release-${{ matrix.target }}
+          save-if: false
 
       - run: npm ci
 
