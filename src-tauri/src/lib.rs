@@ -17,7 +17,7 @@ use std::{
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::WindowEvent;
+use tauri::{Manager, WindowEvent};
 
 pub struct AppState {
     pub project_service: Mutex<ProjectService>,
@@ -106,6 +106,7 @@ pub fn run() {
                 let _ = window.show();
                 let _ = window.set_focus();
             } else {
+                tray::set_dock_visible(app.handle(), false);
                 trace_startup("setup:hidden_window_ready");
             }
 
@@ -120,6 +121,7 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                tray::set_dock_visible(window.app_handle(), false);
             }
         })
         .manage(AppState {

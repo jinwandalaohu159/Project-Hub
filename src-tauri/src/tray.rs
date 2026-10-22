@@ -44,7 +44,23 @@ pub(crate) fn ensure_main_window(app: &tauri::AppHandle, visible: bool) -> tauri
     builder.build()
 }
 
+/// macOS: the Dock icon only shows while the main window is open; otherwise the app lives in the menu bar.
+pub(crate) fn set_dock_visible(app: &tauri::AppHandle, visible: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if visible {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
+        let _ = app.set_activation_policy(policy);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, visible);
+}
+
 pub(crate) fn show_main_window(app: &tauri::AppHandle) {
+    set_dock_visible(app, true);
     if let Ok(window) = ensure_main_window(app, true) {
         let _ = window.show();
         let _ = window.unminimize();
