@@ -27,7 +27,7 @@ dist-ssr
 
 # Local only: backups, release builds, assistant settings
 backup/
-release/
+/release/
 .claude/
 
 # Rust build output of the workspace crates
