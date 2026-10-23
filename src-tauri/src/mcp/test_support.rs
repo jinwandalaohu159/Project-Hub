@@ -10,7 +10,10 @@ use std::sync::Mutex;
 
 pub(crate) struct TestHost {
     projects: Vec<Project>,
+    /// Titles of the records tools saved.
     pub(crate) saved: Mutex<Vec<String>>,
+    /// Every change tools reported, as (action, summary).
+    pub(crate) changes: Mutex<Vec<(String, String)>>,
 }
 
 impl McpHost for TestHost {
@@ -20,8 +23,11 @@ impl McpHost for TestHost {
     fn identity(&self) -> Option<Identity> {
         Some(Identity { name: "Agent".into(), email: "agent@example.com".into() })
     }
-    fn on_saved(&self, _project: &Project, message: &str) {
-        self.saved.lock().unwrap().push(message.to_string());
+    fn on_changed(&self, _project: &Project, action: &str, summary: &str) {
+        if action == "save.create" {
+            self.saved.lock().unwrap().push(summary.to_string());
+        }
+        self.changes.lock().unwrap().push((action.to_string(), summary.to_string()));
     }
 }
 
@@ -45,7 +51,7 @@ pub(crate) fn host_with_repo() -> (TestHost, tempfile::TempDir) {
         added_at: chrono::Utc::now(),
         missing: false,
     };
-    (TestHost { projects: vec![project], saved: Mutex::new(vec![]) }, dir)
+    (TestHost { projects: vec![project], saved: Mutex::new(vec![]), changes: Mutex::new(vec![]) }, dir)
 }
 
 pub(crate) fn call(host: &TestHost, name: &str, args: Value) -> Value {

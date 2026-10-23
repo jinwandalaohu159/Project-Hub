@@ -1,9 +1,14 @@
 //! Checking for and installing new versions of Project Hub itself.
 
+use crate::commands::preferences::update_settings;
 use crate::logs::{app_log, app_log_on_change};
-use crate::update;
+use crate::update::{
+    self,
+    handoff::{self, HelperJob, UpdateSource},
+    outcome::{self, UpdateOutcome},
+};
+use crate::AppState;
 use serde::Serialize;
-use std::time::Duration;
 use tauri::Emitter;
 
 pub(crate) const UPDATE_PROGRESS_EVENT: &str = "update-progress";
@@ -42,11 +47,13 @@ pub(crate) async fn check_for_update(app: tauri::AppHandle) -> Result<update::Up
     result
 }
 
-/// Downloads the new installer, starts it and quits; the installer reopens the updated app.
-/// Progress goes out as `update-progress` events: `downloading` with byte counts, then `restarting`.
+/// Downloads the new installer, hands it to the update helper and quits; the helper's window shows
+/// the restart and opens the updated app. Download progress goes out as `update-progress` events:
+/// `downloading` with byte counts, then `restarting`.
 #[tauri::command]
 pub(crate) async fn install_update(
     app: tauri::AppHandle,
+    version: String,
     url: String,
     name: String,
     size: u64,
@@ -54,6 +61,7 @@ pub(crate) async fn install_update(
     let progress_app = app.clone();
     app_log("info", "update.install", &name);
     let result = tauri::async_runtime::spawn_blocking(move || {
+        let app_path = update::app_location().ok_or_else(self_update_unavailable)?;
         let emit = |phase: &str, downloaded: u64, total: u64| {
             let _ = progress_app.emit(
                 UPDATE_PROGRESS_EVENT,
@@ -63,11 +71,14 @@ pub(crate) async fn install_update(
         let installer = update::download(&url, &name, size, |downloaded, total| {
             emit("downloading", downloaded, total)
         })?;
-        update::launch_installer(&installer)?;
         emit("restarting", size, size);
-        // Let the window show that it is restarting before it disappears.
-        std::thread::sleep(Duration::from_millis(1200));
-        Ok::<(), String>(())
+        handoff::spawn_helper(&HelperJob {
+            version,
+            source: UpdateSource::Installer { path: installer },
+            app: app_path,
+            parent_pid: std::process::id(),
+            silent: false,
+        })
     })
     .await
     .map_err(|e| e.to_string())
@@ -76,7 +87,36 @@ pub(crate) async fn install_update(
         app_log("error", "update.install_failed", error);
     }
     result?;
-    app_log("info", "update.restart", "quitting for the installer");
+    app_log("info", "update.restart", "quitting for the update helper");
     app.exit(0);
     Ok("restarting".to_string())
+}
+
+fn self_update_unavailable() -> String {
+    if cfg!(all(unix, not(target_os = "macos"))) {
+        "UPDATE_NEEDS_APPIMAGE".to_string()
+    } else {
+        "UPDATE_INSTALL_FAILED:this copy of Project Hub cannot update itself".to_string()
+    }
+}
+
+/// How the last update went, once: the app tells the user after it reopens.
+#[tauri::command]
+pub(crate) fn take_update_outcome() -> Option<UpdateOutcome> {
+    let outcome = outcome::take()?;
+    match &outcome.error {
+        None => app_log("info", "update.installed", &format!("v{}", outcome.version)),
+        Some(error) => app_log("error", "update.install_failed", &format!("v{}: {error}", outcome.version)),
+    }
+    Some(outcome)
+}
+
+#[tauri::command]
+pub(crate) fn get_auto_update(state: tauri::State<AppState>) -> Result<bool, String> {
+    Ok(state.settings.lock().map_err(|e| e.to_string())?.auto_update)
+}
+
+#[tauri::command]
+pub(crate) fn set_auto_update(enabled: bool, state: tauri::State<AppState>) -> Result<bool, String> {
+    update_settings(&state, |settings| settings.auto_update = enabled).map(|_| enabled)
 }

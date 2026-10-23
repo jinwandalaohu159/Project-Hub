@@ -192,3 +192,14 @@ export interface ImportReport {
   imported: string[];
   errors: ProjectIssue[];
 }
+
+/** A program project folders can be opened with (see src-tauri/src/openers). */
+export interface OpenerView {
+  id: string;
+  name: string;
+  kind: "terminal" | "editor" | "files";
+  program: string;
+  custom: boolean;
+  hidden: boolean;
+  default: boolean;
+}

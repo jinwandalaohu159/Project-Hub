@@ -8,6 +8,8 @@ const props = defineProps<{
   /** Pointer position the menu opens at; `null` keeps it closed. */
   at: { x: number; y: number } | null;
   minWidth?: number;
+  /** The button a dropdown menu hangs from: pressing it is not a click outside (it toggles). */
+  anchor?: HTMLElement | null;
 }>();
 
 const emit = defineEmits<{ close: [] }>();
@@ -36,7 +38,7 @@ watch(
 
 useDismiss({
   isOpen: () => props.at !== null,
-  isInside: (target) => menuRef.value?.contains(target) ?? false,
+  isInside: (target) => !!(menuRef.value?.contains(target) || props.anchor?.contains(target)),
   onDismiss: () => emit("close"),
   closeOnScroll: true,
   closeOnBlur: true,

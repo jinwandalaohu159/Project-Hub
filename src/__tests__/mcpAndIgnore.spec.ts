@@ -78,7 +78,7 @@ describe("MCP tool details", () => {
   });
 
   it("documents every tool the backend offers", () => {
-    for (const name of ["list_projects", "get_status", "get_diff", "save_version", "get_history", "get_ignore_rules", "update_ignore_rules"]) {
+    for (const name of ["list_projects", "get_status", "get_diff", "save_version", "get_history", "get_ignore_rules", "update_ignore_rules", "upload_to_cloud", "download_from_cloud", "get_release_info", "publish_release", "get_release_status"]) {
       expect(MCP_TOOL_DOCS[name], name).toBeDefined();
     }
   });

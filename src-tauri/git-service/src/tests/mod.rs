@@ -12,6 +12,7 @@ mod remote;
 mod rewrite;
 mod status;
 mod sync;
+mod tags;
 
 struct TestRepo {
     path: String,

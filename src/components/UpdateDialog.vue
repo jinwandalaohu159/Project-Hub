@@ -4,6 +4,7 @@ import { Download, Loader2 } from "lucide-vue-next";
 import ModalShell from "./ModalShell.vue";
 import { useUpdater } from "../composables/useUpdater";
 import { useI18n } from "../composables/useI18n";
+import { formatBytes } from "../utils/format";
 
 /** Confirms an update, then shows it through: download progress, then the restart. */
 const { info, currentVersion, dialogOpen, phase, downloaded, total, progress, installNow } = useUpdater();
@@ -11,14 +12,10 @@ const { t } = useI18n();
 
 const updating = computed(() => phase.value !== "idle");
 
-function formatSize(bytes: number) {
-  return bytes > 0 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : "";
-}
-
 const progressLabel = computed(() =>
   phase.value === "restarting"
     ? t("updateRestarting")
-    : t("updateDownloadingProgress", { done: formatSize(downloaded.value) || "0 MB", total: formatSize(total.value) })
+    : t("updateDownloadingProgress", { done: formatBytes(downloaded.value), total: total.value > 0 ? formatBytes(total.value) : "" })
 );
 </script>
 
@@ -48,7 +45,7 @@ const progressLabel = computed(() =>
     <p v-else class="mt-3 text-xs text-muted">{{ t('updateRestartHint') }}</p>
 
     <template #footer>
-      <span class="mr-auto self-center text-[11px] text-text-muted">{{ formatSize(info?.asset_size ?? 0) }}</span>
+      <span class="mr-auto self-center text-[11px] text-text-muted">{{ info?.asset_size ? formatBytes(info.asset_size) : '' }}</span>
       <button class="btn btn-ghost" :disabled="updating" @click="dialogOpen = false">{{ t('updateLater') }}</button>
       <button class="btn btn-primary" :disabled="updating" @click="installNow">
         <Loader2 v-if="updating" :size="14" class="spin" />

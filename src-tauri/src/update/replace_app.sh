@@ -1,14 +1,13 @@
 #!/bin/sh
-# Replaces Project Hub's app bundle with the one in a downloaded disk image, then opens it again.
-# Started by the app right before it quits (see install.rs).
-# Arguments: the app's process id, the disk image, the bundle to replace.
-# When the bundle cannot be replaced (no write access, for example) the old one stays and the disk
-# image is opened for the user instead. Output goes to $TMPDIR/project-hub-update.log.
+# Replaces Project Hub's app bundle with the one in a downloaded disk image. Run by the update
+# helper after the app has quit (see install.rs); the helper opens the app again afterwards.
+# Arguments: the disk image, the bundle to replace.
+# Exits non-zero when the bundle cannot be replaced (no write access, for example); the old bundle
+# then stays in place. Output goes to $TMPDIR/project-hub-update.log.
 
-pid="$1"; dmg="$2"; app="$3"
+dmg="$1"; app="$2"
 exec >>"${TMPDIR:-/tmp}/project-hub-update.log" 2>&1
 echo "$(date) updating $app from $dmg"
-while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
 
 staged="$app.update"; old="$app.old"; mnt="$(mktemp -d)"
 replace() {
@@ -22,12 +21,12 @@ replace() {
 }
 
 if replace; then
-  hdiutil detach -quiet "$mnt"
-  open "$app"
+  status=0
 else
-  echo "could not replace the app; opening the disk image"
+  echo "could not replace the app"
   rm -rf "$staged"
-  hdiutil detach -quiet "$mnt" 2>/dev/null
-  open "$dmg"
+  status=1
 fi
+hdiutil detach -quiet "$mnt" 2>/dev/null
 rmdir "$mnt" 2>/dev/null
+exit $status

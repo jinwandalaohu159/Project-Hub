@@ -30,9 +30,10 @@ pub fn try_read_only_tool(host: &dyn McpHost, name: &str, args: &serde_json::Val
 pub trait McpHost: Send + Sync {
     fn projects(&self) -> Vec<Project>;
     fn identity(&self) -> Option<Identity>;
-    fn on_saved(&self, project: &Project, message: &str);
-    /// The project's hiding rules changed (nothing is saved yet).
-    fn on_hiding_changed(&self, _project: &Project, _summary: &str) {}
+    /// A tool changed `project`: saved a record (`save.create`), changed its hidden files
+    /// (`ignore.update`), uploaded or downloaded (`cloud.*`) or published a release (`release.*`).
+    /// `summary` says what, for the project's log.
+    fn on_changed(&self, project: &Project, action: &str, summary: &str);
 }
 
 /// `project-hub.exe --mcp` host: reads the same project list and settings the app uses.
@@ -48,12 +49,8 @@ impl McpHost for FileHost {
         crate::settings::load_settings().effective_identity()
     }
 
-    fn on_saved(&self, project: &Project, message: &str) {
-        crate::logs::append_project_log(&project.id, &project.name, "save.create", &format!("{}: {} (MCP)", project.name, message));
-    }
-
-    fn on_hiding_changed(&self, project: &Project, summary: &str) {
-        crate::logs::append_project_log(&project.id, &project.name, "ignore.update", &format!("{}: {} (MCP)", project.name, summary));
+    fn on_changed(&self, project: &Project, action: &str, summary: &str) {
+        crate::logs::append_project_log(&project.id, &project.name, action, &format!("{}: {} (MCP)", project.name, summary));
     }
 }
 

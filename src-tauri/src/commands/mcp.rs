@@ -44,25 +44,9 @@ impl mcp::McpHost for AppHost {
         identity_of(&self.app.state::<AppState>())
     }
 
-    fn on_saved(&self, project: &project_service::Project, message: &str) {
-        append_project_log(
-            &project.id,
-            &project.name,
-            "save.create",
-            &format!("{}: {} (MCP)", project.name, message),
-        );
-        let _ = self
-            .app
-            .emit(REPO_CHANGED_EVENT, serde_json::json!({ "project_id": project.id }));
-    }
-
-    fn on_hiding_changed(&self, project: &project_service::Project, summary: &str) {
-        append_project_log(
-            &project.id,
-            &project.name,
-            "ignore.update",
-            &format!("{}: {} (MCP)", project.name, summary),
-        );
+    /// Logged like the app's own operations, and the window refreshes the project.
+    fn on_changed(&self, project: &project_service::Project, action: &str, summary: &str) {
+        append_project_log(&project.id, &project.name, action, &format!("{}: {} (MCP)", project.name, summary));
         let _ = self
             .app
             .emit(REPO_CHANGED_EVENT, serde_json::json!({ "project_id": project.id }));

@@ -7,13 +7,27 @@ import { useToast } from "../../composables/useToast";
 import { useI18n } from "../../composables/useI18n";
 import { errorText } from "../../utils/errors";
 
-const { currentVersion, releasesUrl, info, checking, installing, available, lastChecked, autoCheck, loadVersion, check, installNow } =
-  useUpdater();
+const {
+  currentVersion,
+  releasesUrl,
+  info,
+  checking,
+  installing,
+  available,
+  lastChecked,
+  autoUpdate,
+  loadVersion,
+  loadAutoUpdate,
+  setAutoUpdate,
+  check,
+  installNow,
+} = useUpdater();
 const toast = useToast();
 const { t } = useI18n();
 
 onMounted(() => {
   loadVersion().catch(() => undefined);
+  loadAutoUpdate().catch(() => undefined);
   if (checking.value) startSpin();
 });
 
@@ -57,6 +71,14 @@ async function checkNow() {
   }
 }
 
+async function toggleAutoUpdate() {
+  try {
+    await setAutoUpdate(!autoUpdate.value);
+  } catch (error) {
+    toast.error(errorText(error, t));
+  }
+}
+
 const status = computed(() => {
   if (checking.value) return t("updateChecking");
   if (available.value && info.value) return t("updateAvailable", { version: info.value.latest });
@@ -84,8 +106,11 @@ const status = computed(() => {
         </button>
       </div>
       <div class="flex items-center justify-between gap-3">
-        <div class="setting-description mt-0">{{ t('updateAutoCheck') }}</div>
-        <button class="switch-btn" :class="{ active: autoCheck }" role="switch" :aria-checked="autoCheck" @click="autoCheck = !autoCheck">
+        <div class="setting-copy">
+          <div class="setting-name">{{ t('updateAuto') }}</div>
+          <div class="setting-description">{{ t('updateAutoDescription') }}</div>
+        </div>
+        <button class="switch-btn shrink-0" :class="{ active: autoUpdate }" role="switch" :aria-checked="autoUpdate" @click="toggleAutoUpdate">
           <span class="switch-thumb" />
         </button>
       </div>

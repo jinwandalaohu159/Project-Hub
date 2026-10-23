@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "The update helper's progress window: reads its progress, nothing else",
+  "windows": [
+    "updater"
+  ],
+  "permissions": [
+    "core:event:default",
+    "core:app:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-show",
+    "core:window:allow-set-focus"
+  ]
+}

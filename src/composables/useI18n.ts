@@ -5,7 +5,18 @@ import zh from '../i18n/zh'
 export type Locale = 'en' | 'zh'
 export type TranslationKey = keyof typeof en
 
-const locale = ref<Locale>('zh')
+const LOCALE_KEY = 'project-hub-locale'
+
+/** The language chosen last time (it also reaches the update helper's window); Chinese at first. */
+function savedLocale(): Locale {
+  try {
+    return window.localStorage.getItem(LOCALE_KEY) === 'en' ? 'en' : 'zh'
+  } catch {
+    return 'zh'
+  }
+}
+
+const locale = ref<Locale>(savedLocale())
 
 const messages: Record<Locale, Record<TranslationKey, string>> = { en, zh }
 
@@ -22,6 +33,11 @@ export function useI18n() {
 
   function setLocale(l: Locale) {
     locale.value = l
+    try {
+      window.localStorage.setItem(LOCALE_KEY, l)
+    } catch {
+      // Unavailable storage only means the choice is not remembered.
+    }
   }
 
   return { locale, t, setLocale }

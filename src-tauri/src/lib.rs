@@ -4,6 +4,8 @@ mod github;
 mod github_login;
 mod logs;
 mod mcp;
+mod openers;
+mod release;
 mod settings;
 mod transfer;
 mod tray;
@@ -51,7 +53,17 @@ pub fn run() {
         return;
     }
 
+    let context = tauri::generate_context!();
+    if let Some(job) = update::handoff::job_from_args() {
+        update::helper_window::run(job, context);
+        return;
+    }
+
     let start_hidden = tray::should_start_hidden();
+    let app_settings = settings::load_settings();
+    if update::on_launch::hand_over(&app_settings, start_hidden) {
+        return;
+    }
 
     trace_startup(format!(
         "run:enter args={:?}",
@@ -126,7 +138,7 @@ pub fn run() {
         })
         .manage(AppState {
             project_service: Mutex::new(project_service),
-            settings: Mutex::new(settings::load_settings()),
+            settings: Mutex::new(app_settings),
             mcp: Mutex::new(commands::mcp::McpRuntime::default()),
         })
         .invoke_handler(tauri::generate_handler![
@@ -201,7 +213,16 @@ pub fn run() {
             commands::update::get_app_version,
             commands::update::check_for_update,
             commands::update::install_update,
+            commands::update::take_update_outcome,
+            commands::update::get_auto_update,
+            commands::update::set_auto_update,
+            commands::openers::list_openers,
+            commands::openers::open_folder_with,
+            commands::openers::set_default_opener,
+            commands::openers::set_opener_hidden,
+            commands::openers::add_custom_opener,
+            commands::openers::remove_custom_opener,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }

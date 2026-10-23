@@ -32,6 +32,10 @@ pub struct AppSettings {
     pub mcp_enabled: bool,
     pub mcp_port: u16,
     pub github: Option<GithubAccount>,
+    /// Install new versions by themselves when the app opens.
+    pub auto_update: bool,
+    /// Programs to open project folders with.
+    pub openers: crate::openers::OpenerPrefs,
 }
 
 impl Default for AppSettings {
@@ -42,6 +46,8 @@ impl Default for AppSettings {
             mcp_enabled: true,
             mcp_port: DEFAULT_MCP_PORT,
             github: None,
+            auto_update: true,
+            openers: Default::default(),
         }
     }
 }

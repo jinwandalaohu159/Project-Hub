@@ -19,10 +19,11 @@ export interface UpdateInfo {
   asset_size: number;
 }
 
-/** Checks are cheap (see update/check.rs), so a new release shows up within minutes. */
-/** Where an update stands once the user starts it; after `restarting` the app quits. */
+/** Where an update stands once the user starts it; after `restarting` the app quits and the
+ *  update helper's window takes over. */
 export type UpdatePhase = "idle" | "downloading" | "restarting";
 
+/** Checks are cheap (see update/check.rs), so a new release shows up within minutes. */
 const AUTO_CHECK_INTERVAL_MS = 2 * 60 * 1000;
 /** Coming back to the window checks right away, unless a check just ran. */
 const FOCUS_CHECK_MIN_GAP_MS = 30 * 1000;
@@ -37,17 +38,16 @@ const downloaded = ref(0);
 const total = ref(0);
 const lastChecked = ref<number | null>(null);
 const dialogOpen = ref(false);
+/** Installs new versions by itself when the app opens (done by the backend before this loads). */
+const autoUpdate = ref(true);
 let autoTimer: ReturnType<typeof setInterval> | null = null;
 let onFocus: (() => void) | null = null;
 let started = false;
-let prefs: { autoCheck: Ref<boolean>; dismissedVersion: Ref<string> } | null = null;
+let dismissed: Ref<string> | null = null;
 
 export function useUpdater() {
-  prefs ??= {
-    autoCheck: usePersistentRef("auto-check-updates", true),
-    dismissedVersion: usePersistentRef<string>("dismissed-update", ""),
-  };
-  const { autoCheck, dismissedVersion } = prefs;
+  dismissed ??= usePersistentRef<string>("dismissed-update", "");
+  const dismissedVersion = dismissed;
 
   const available = computed(() => !!info.value?.available);
   /** Banner hides for a version the user dismissed until a newer one appears. */
@@ -88,6 +88,7 @@ export function useUpdater() {
     try {
       // On success the app quits and the installer reopens the new version.
       return await invoke<string>("install_update", {
+        version: update.latest,
         url: update.asset_url,
         name: update.asset_name,
         size: update.asset_size,
@@ -113,6 +114,24 @@ export function useUpdater() {
     }
   }
 
+  async function loadAutoUpdate() {
+    if (isTauri()) autoUpdate.value = await invoke<boolean>("get_auto_update");
+  }
+
+  async function setAutoUpdate(enabled: boolean) {
+    autoUpdate.value = await invoke<boolean>("set_auto_update", { enabled });
+  }
+
+  /** Once the app is open again after an update, says how it went. */
+  async function reportLastUpdate() {
+    const outcome = await invoke<{ version: string; ok: boolean; error: string | null } | null>("take_update_outcome");
+    if (!outcome) return;
+    const { t } = useI18n();
+    if (outcome.ok) useToast().success(t("updateInstalled", { version: outcome.version }));
+    else
+      useToast().error(errorText(outcome.error, t), { detail: t("updateAutoFailed", { version: outcome.version }) });
+  }
+
   function dismiss() {
     if (info.value) dismissedVersion.value = info.value.latest;
   }
@@ -122,8 +141,10 @@ export function useUpdater() {
     if (started) return;
     started = true;
     loadVersion().catch(() => undefined);
+    loadAutoUpdate().catch(() => undefined);
+    reportLastUpdate().catch(() => undefined);
     const quietCheck = () => {
-      if (autoCheck.value && !installing.value) check().catch(() => undefined);
+      if (!installing.value) check().catch(() => undefined);
     };
     setTimeout(quietCheck, 5000);
     autoTimer = setInterval(quietCheck, AUTO_CHECK_INTERVAL_MS);
@@ -152,7 +173,7 @@ export function useUpdater() {
     total,
     progress,
     lastChecked,
-    autoCheck,
+    autoUpdate,
     dialogOpen,
     available,
     showBanner,
@@ -161,6 +182,8 @@ export function useUpdater() {
     install,
     installNow,
     dismiss,
+    loadAutoUpdate,
+    setAutoUpdate,
     startAutoCheck,
     stopAutoCheck,
   };

@@ -74,6 +74,63 @@ export const MCP_TOOL_DOCS: Record<string, McpToolDoc> = {
         2,
       ),
   },
+  upload_to_cloud: {
+    summary: "mcpToolUploadToCloud",
+    returns: "mcpReturnsUploadToCloud",
+    params: {
+      ...PROJECT,
+      new_repository: "mcpParamNewRepository",
+      private: "mcpParamPrivate",
+      description: "mcpParamRepoDescription",
+      overwrite_cloud: "mcpParamOverwriteCloud",
+    },
+    example: (project) => ({ project }),
+    sampleResult: () => "Uploaded version main.",
+  },
+  download_from_cloud: {
+    summary: "mcpToolDownloadFromCloud",
+    returns: "mcpReturnsDownloadFromCloud",
+    params: { ...PROJECT, keep: "mcpParamKeep" },
+    example: (project) => ({ project }),
+    sampleResult: () => "Downloaded 2 save record(s) of version main.",
+  },
+  get_release_info: {
+    summary: "mcpToolGetReleaseInfo",
+    returns: "mcpReturnsGetReleaseInfo",
+    params: PROJECT,
+    example: (project) => ({ project }),
+  },
+  publish_release: {
+    summary: "mcpToolPublishRelease",
+    returns: "mcpReturnsPublishRelease",
+    params: {
+      ...PROJECT,
+      version: "mcpParamVersion",
+      title: "mcpParamReleaseTitle",
+      notes: "mcpParamNotes",
+      files: "mcpParamFiles",
+      cloud_build: "mcpParamCloudBuild",
+      prerelease: "mcpParamPrerelease",
+    },
+    example: (project) => ({ project, version: "1.2.0", files: [`${project}/dist/my-app-1.2.0-setup.exe`] }),
+    sampleResult: () =>
+      JSON.stringify(
+        {
+          published: "v1.2.0",
+          url: "https://github.com/me/my-app/releases/tag/v1.2.0",
+          uploaded: [{ name: "my-app-1.2.0-setup.exe", size: 8421376 }],
+          all_files: ["my-app-1.2.0-setup.exe"],
+        },
+        null,
+        2,
+      ),
+  },
+  get_release_status: {
+    summary: "mcpToolGetReleaseStatus",
+    returns: "mcpReturnsGetReleaseStatus",
+    params: { ...PROJECT, version: "mcpParamStatusVersion" },
+    example: (project) => ({ project, version: "1.2.0" }),
+  },
 };
 
 /** Where an example points when there is no project yet. */

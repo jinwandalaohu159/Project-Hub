@@ -1,6 +1,8 @@
 //! GitHub: the REST calls Project Hub makes for the signed-in account. The token is kept in
-//! `token`, and repository addresses and names are tidied in `repo_url`.
+//! `token`, repository addresses and names are tidied in `repo_url`, and releases (with the cloud
+//! builds that make them) are in `releases`.
 
+pub mod releases;
 mod repo_url;
 mod token;
 
@@ -60,6 +62,20 @@ fn api_error(error: ureq::Error) -> String {
             format!("GITHUB_API_ERROR:{code} {message}")
         }
         ureq::Error::Transport(transport) => format!("Cannot reach GitHub: {transport}"),
+    }
+}
+
+/// The sign-in for a project's cloud repository: a GitHub repository gets the signed-in account
+/// (required to upload; to download only used when present, public repositories need none), any
+/// other host none.
+pub fn token_for_remote(remote_url: Option<&str>, required: bool) -> Result<Option<String>, String> {
+    if !remote_url.is_some_and(is_github_https) {
+        return Ok(None);
+    }
+    match load_token() {
+        Some(token) => Ok(Some(token)),
+        None if required => Err("GITHUB_NOT_SIGNED_IN".to_string()),
+        None => Ok(None),
     }
 }
 

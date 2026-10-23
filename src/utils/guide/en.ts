@@ -150,6 +150,7 @@ const guide: Guide = {
           type: "list",
           items: [
             "The top of the Files panel has **New file**, **New folder** and **Refresh**.",
+            "The **Open with** button opens the project folder in a terminal, VS Code, Cursor, PyCharm and so on: what is installed is listed by itself, and **Manage programs…** sets the default, hides what you do not use or adds any other program. Right-click a folder to open it with the default.",
             "**Right-click** a file or folder to create, **Rename**, **Stop saving** or **Delete** it.",
             "Drag a file onto another folder to move it.",
           ],
@@ -229,7 +230,7 @@ const guide: Guide = {
       blocks: [
         {
           type: "paragraph",
-          text: "Project Hub runs an MCP server that only programs on this computer can reach. Once connected, a coding agent can see what changed, write the save notes, save a version and manage hidden files.",
+          text: "Project Hub runs an MCP server that only programs on this computer can reach. Once connected, a coding agent can see what changed, write the save notes, save a version, manage hidden files, and with the GitHub account signed in to Project Hub upload, download and publish the installers it built on GitHub Releases (or start a cloud build for every platform). The agent needs no GitHub access of its own.",
         },
         {
           type: "steps",
@@ -245,6 +246,7 @@ const guide: Guide = {
           items: [
             "**Tools** lists everything the agent can use; open one to see its parameters, an example call and what it returns.",
             "Tools marked **Read only** have **Try it**, which shows exactly what the agent would get.",
+            "To ship a new version, tell the agent \"Publish 1.2.0\": it looks up the release info, writes the notes, builds here and hands the files to Project Hub, which uploads them and makes the release public only once every file is there.",
             "After updating Project Hub, reconnect the agent (restarting it is enough) to pick up new tools.",
           ],
         },
@@ -277,7 +279,7 @@ const guide: Guide = {
           type: "terms",
           items: [
             { term: "Language and theme", text: "中文 or English, dark or light." },
-            { term: "About & updates", text: "Check for and install new versions, or let it check by itself." },
+            { term: "About & updates", text: "See your version and update by hand. With \"Update automatically\" on, new versions are installed and opened by themselves when the app starts." },
             { term: "Startup", text: "Start with your computer, minimized to the tray." },
             { term: "GitHub account", text: "Sign in to upload to the cloud." },
             { term: "Saved by", text: "The name and email recorded with each save; empty means your GitHub account's." },

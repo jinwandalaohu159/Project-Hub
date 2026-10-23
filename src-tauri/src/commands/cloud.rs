@@ -15,18 +15,9 @@ pub(crate) fn suggest_repo_name(name: String) -> String {
     github::sanitize_repo_name(&name)
 }
 
-/// The GitHub sign-in for the project's cloud repository. Uploading always needs one; downloading
-/// only from a private repository, so there it is used when present.
+/// The GitHub sign-in for the project's cloud repository (see `github::token_for_remote`).
 fn github_token(svc: &GitService, repo_path: &str, required: bool) -> Result<Option<String>, String> {
-    let url = svc.get_remote_url(repo_path, "origin").unwrap_or_default();
-    if !github::is_github_https(&url) {
-        return Ok(None);
-    }
-    if required {
-        require_token().map(Some)
-    } else {
-        Ok(github::load_token())
-    }
+    github::token_for_remote(svc.get_remote_url(repo_path, "origin").as_deref(), required)
 }
 
 #[tauri::command]

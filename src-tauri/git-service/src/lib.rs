@@ -24,10 +24,12 @@ mod remote;
 mod rewrite;
 mod status;
 mod sync;
+mod tags;
 
 pub use ignore::{validate_ignore_rule, IgnoreRules, IgnoreUpdate};
 pub use remote::base64_encode;
 pub use rewrite::{RECORD_NOT_IN_VERSION, RECORD_UNDELETABLE};
+pub use tags::RecordSummary;
 
 /// Error prefix returned by [`GitService::push`] when the remote refuses a non-fast-forward update.
 pub const PUSH_REJECTED: &str = "PUSH_REJECTED";

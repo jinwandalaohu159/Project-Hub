@@ -9,7 +9,7 @@ pub(crate) fn cloud_ref(branch: &str) -> String {
 
 /// Header that hands a GitHub token to git through the environment, so it never lands in the
 /// command line or the repository config.
-fn auth_header(token: Option<&str>) -> Option<String> {
+pub(crate) fn auth_header(token: Option<&str>) -> Option<String> {
     token.map(|token| {
         format!(
             "AUTHORIZATION: basic {}",
@@ -19,7 +19,7 @@ fn auth_header(token: Option<&str>) -> Option<String> {
 }
 
 /// Never stop to ask for a password: without a usable sign-in git fails instead of hanging.
-fn auth_envs(header: Option<&str>) -> Vec<(&str, &str)> {
+pub(crate) fn auth_envs(header: Option<&str>) -> Vec<(&str, &str)> {
     let mut envs = vec![("GCM_INTERACTIVE", "never"), ("GIT_TERMINAL_PROMPT", "0")];
     if let Some(header) = header {
         envs.push(("GIT_CONFIG_COUNT", "1"));
