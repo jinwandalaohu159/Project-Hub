@@ -5,9 +5,6 @@ mod windows;
 // Always compiled so its entry builders stay tested on every platform.
 mod unix;
 
-#[cfg(target_os = "windows")]
-pub(crate) use windows::migrate_autostart_to_task;
-
 pub(crate) fn is_enabled() -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     return windows::get_autostart_enabled_platform();

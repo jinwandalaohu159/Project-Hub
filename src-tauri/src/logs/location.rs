@@ -1,13 +1,10 @@
-//! Where each log lives: inside the project's `.git` folder so it moves with the project, the app
-//! data folder for projects without one and for Project Hub's own log, and the older locations that
-//! are merged in on first use.
+//! Where each log lives: inside the project's `.git` folder so it moves with the project, and the app
+//! data folder for projects without one and for Project Hub's own log.
 
 use crate::settings;
 use std::{fs, path::PathBuf};
 
 pub(crate) const LOG_DIR_NAME: &str = "logs";
-
-pub(crate) const LOG_PROJECTS_DIR_NAME: &str = "projects";
 
 pub(crate) const LOG_FILE_NAME: &str = "project-hub.log";
 
@@ -17,24 +14,6 @@ pub(crate) const LOG_SETTINGS_FILE_NAME: &str = "log-settings.json";
 pub(crate) const APP_LOG_ID: &str = "project-hub-app";
 
 const APP_LOG_DIR_NAME: &str = "app";
-
-pub(crate) fn app_install_dir() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    exe.parent()
-        .map(PathBuf::from)
-        .ok_or_else(|| "APP_DIR_UNKNOWN".to_string())
-}
-
-/// Where logs lived before they moved into each project; only read for migration.
-pub(crate) fn legacy_log_dir(project_id: &str) -> Option<PathBuf> {
-    Some(
-        app_install_dir()
-            .ok()?
-            .join(LOG_DIR_NAME)
-            .join(LOG_PROJECTS_DIR_NAME)
-            .join(safe_log_project_id(project_id)),
-    )
-}
 
 /// Fallback for projects whose folder is missing or has no version history yet.
 pub(crate) fn central_log_dir(project_id: &str) -> PathBuf {
@@ -55,18 +34,15 @@ pub(crate) fn registered_project_path(project_id: &str) -> Option<PathBuf> {
 }
 
 /// Logs travel with the project: they live inside its `.git` folder, invisible to the file tree
-/// and never part of a save. Older locations are merged in on first use.
-pub(crate) fn resolve_log_dir(project_path: Option<&std::path::Path>, central: PathBuf, legacy: Option<PathBuf>) -> PathBuf {
+/// and never part of a save. Logs written to the central folder while the project was missing join
+/// it again once it is found.
+pub(crate) fn resolve_log_dir(project_path: Option<&std::path::Path>, central: PathBuf) -> PathBuf {
     let dir = match project_path {
         Some(path) if path.join(".git").is_dir() => path.join(".git").join("project-hub").join("logs"),
         _ => central.clone(),
     };
-    let mut sources: Vec<PathBuf> = legacy.into_iter().collect();
     if central != dir {
-        sources.push(central);
-    }
-    for source in sources {
-        migrate_log_files(&source, &dir);
+        migrate_log_files(&central, &dir);
     }
     dir
 }
@@ -117,7 +93,6 @@ pub(crate) fn project_log_dir(project_id: &str) -> Result<PathBuf, String> {
     Ok(resolve_log_dir(
         registered_project_path(project_id).as_deref(),
         central_log_dir(project_id),
-        legacy_log_dir(project_id),
     ))
 }
 
@@ -141,27 +116,22 @@ mod tests {
     }
 
     #[test]
-    fn logs_move_into_the_project_and_follow_it() {
+    fn logs_live_in_the_project_and_follow_it() {
         let root = tempfile::TempDir::new().unwrap();
         let project = root.path().join("demo");
         fs::create_dir_all(project.join(".git")).unwrap();
-        let legacy = root.path().join("install").join("logs").join("p1");
-        fs::create_dir_all(&legacy).unwrap();
-        fs::write(legacy.join(LOG_FILE_NAME), "old line\n").unwrap();
         let central = root.path().join("appdata").join("logs").join("p1");
 
-        let dir = resolve_log_dir(Some(&project), central.clone(), Some(legacy.clone()));
+        let dir = resolve_log_dir(Some(&project), central.clone());
         assert_eq!(dir, project.join(".git").join("project-hub").join("logs"));
-        assert_eq!(fs::read_to_string(dir.join(LOG_FILE_NAME)).unwrap(), "old line\n");
-        assert!(!legacy.exists());
 
         // Missing folder: logs wait in the central store, then rejoin the project once it is found.
         let missing = root.path().join("gone");
-        let fallback = resolve_log_dir(Some(&missing), central.clone(), None);
+        let fallback = resolve_log_dir(Some(&missing), central.clone());
         assert_eq!(fallback, central);
         fs::create_dir_all(&central).unwrap();
         fs::write(central.join("extra.log"), "while missing\n").unwrap();
-        let back = resolve_log_dir(Some(&project), central.clone(), None);
+        let back = resolve_log_dir(Some(&project), central.clone());
         assert!(back.join("extra.log").exists());
         assert!(!central.exists());
     }

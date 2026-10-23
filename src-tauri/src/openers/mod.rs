@@ -128,10 +128,4 @@ mod tests {
         remove_custom(&mut prefs, &id);
         assert!(prefs.custom.is_empty() && prefs.hidden.is_empty());
     }
-
-    #[test]
-    fn settings_saved_with_a_default_still_load() {
-        let prefs: OpenerPrefs = serde_json::from_str(r#"{"default":"cmd","hidden":["x"],"custom":[]}"#).unwrap();
-        assert_eq!(prefs.hidden, ["x"]);
-    }
 }

@@ -73,10 +73,12 @@ function onAction(action: GuideAction) {
   -webkit-backdrop-filter: blur(8px) saturate(1.05);
 }
 
+/* Pinned to the window's right edge, even when the panels before it leave room (content folded). */
 .guide-dock-row {
   display: flex;
   flex: none;
   min-width: 0;
+  margin-left: auto;
 }
 
 .guide-dock {

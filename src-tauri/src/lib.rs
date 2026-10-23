@@ -102,9 +102,6 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             tray::schedule_tray_registration_retries(app.handle());
 
-            #[cfg(target_os = "windows")]
-            tauri::async_runtime::spawn_blocking(move || autostart::migrate_autostart_to_task(!start_hidden));
-
             let mcp_handle = app.handle().clone();
             tauri::async_runtime::spawn_blocking(move || commands::mcp::restart_mcp(&mcp_handle));
 

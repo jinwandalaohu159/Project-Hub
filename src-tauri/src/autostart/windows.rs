@@ -1,11 +1,5 @@
-//! Windows launch-at-login through a scheduled task (with registry clean-up and elevation fallback).
+//! Windows launch-at-login through a scheduled task (with an elevation fallback).
 
-
-#[cfg(target_os = "windows")]
-pub(crate) const AUTOSTART_REG_VALUE: &str = "Project Hub";
-
-#[cfg(target_os = "windows")]
-pub(crate) const AUTOSTART_REG_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
 #[cfg(target_os = "windows")]
 pub(crate) const AUTOSTART_TASK_NAME: &str = "Project Hub";
@@ -17,16 +11,6 @@ pub(crate) const AUTOSTART_TASK_DELAY_XML: &str = "PT3S";
 pub(crate) fn autostart_exe() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     Ok(exe.display().to_string())
-}
-
-#[cfg(target_os = "windows")]
-pub(crate) fn autostart_task_action() -> Result<String, String> {
-    Ok(format!("\"{}\" --hidden", autostart_exe()?))
-}
-
-#[cfg(target_os = "windows")]
-pub(crate) fn autostart_registry_command() -> Result<String, String> {
-    autostart_task_action()
 }
 
 #[cfg(target_os = "windows")]
@@ -292,48 +276,6 @@ pub(crate) fn schtasks_ok_allow_elevation(args: &[&str], allow_elevation: bool) 
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn get_registry_autostart_enabled() -> Result<bool, String> {
-    use std::io::ErrorKind;
-    use winreg::{enums::HKEY_CURRENT_USER, RegKey};
-
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let run_key = match hkcu.open_subkey(AUTOSTART_REG_PATH) {
-        Ok(key) => key,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.to_string()),
-    };
-
-    match run_key.get_value::<String, _>(AUTOSTART_REG_VALUE) {
-        Ok(value) => Ok(value == autostart_registry_command()?),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-#[cfg(target_os = "windows")]
-pub(crate) fn set_registry_autostart_enabled(enabled: bool) -> Result<(), String> {
-    use std::io::ErrorKind;
-    use winreg::{enums::HKEY_CURRENT_USER, RegKey};
-
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let (run_key, _) = hkcu
-        .create_subkey(AUTOSTART_REG_PATH)
-        .map_err(|e| e.to_string())?;
-
-    if enabled {
-        run_key
-            .set_value(AUTOSTART_REG_VALUE, &autostart_registry_command()?)
-            .map_err(|e| e.to_string())?;
-    } else if let Err(error) = run_key.delete_value(AUTOSTART_REG_VALUE) {
-        if error.kind() != ErrorKind::NotFound {
-            return Err(error.to_string());
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
 pub(crate) fn get_task_autostart_enabled() -> Result<bool, String> {
     let output = schtasks(&["/Query", "/TN", AUTOSTART_TASK_NAME, "/XML"])?;
     if !output.status.success() {
@@ -345,36 +287,8 @@ pub(crate) fn get_task_autostart_enabled() -> Result<bool, String> {
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn migrate_autostart_to_task(allow_elevation: bool) {
-    let task_enabled = get_task_autostart_enabled().unwrap_or(false);
-    let registry_enabled = get_registry_autostart_enabled().unwrap_or(false);
-    if !registry_enabled && !task_enabled {
-        return;
-    }
-
-    if !task_enabled {
-        if let Ok(task_path) = write_autostart_task_xml() {
-            let _ = schtasks_ok_allow_elevation(
-                &[
-                    "/Create",
-                    "/TN",
-                    AUTOSTART_TASK_NAME,
-                    "/XML",
-                    &task_path,
-                    "/F",
-                ],
-                allow_elevation,
-            );
-        }
-        return;
-    }
-
-    let _ = set_registry_autostart_enabled(false);
-}
-
-#[cfg(target_os = "windows")]
 pub(crate) fn get_autostart_enabled_platform() -> Result<bool, String> {
-    Ok(get_task_autostart_enabled()? || get_registry_autostart_enabled()?)
+    get_task_autostart_enabled()
 }
 
 #[cfg(target_os = "windows")]
@@ -396,10 +310,8 @@ pub(crate) fn set_autostart_enabled_platform(enabled: bool) -> Result<(), String
             ],
             true,
         )?;
-        set_registry_autostart_enabled(false)?;
     } else {
         let _ = schtasks_ok_allow_elevation(&["/Delete", "/TN", AUTOSTART_TASK_NAME, "/F"], true);
-        set_registry_autostart_enabled(false)?;
     }
 
     let actual_enabled = get_autostart_enabled_platform()?;

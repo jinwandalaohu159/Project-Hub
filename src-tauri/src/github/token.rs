@@ -33,8 +33,6 @@ fn restrict_to_owner(_path: &std::path::Path) -> Result<(), String> {
 
 pub fn load_token() -> Option<String> {
     let path = token_path();
-    // Files written by older versions were readable by everyone.
-    let _ = restrict_to_owner(&path);
     let bytes = fs::read(&path).ok()?;
     let token = String::from_utf8(unprotect(&bytes).ok()?).ok()?;
     let token = token.trim().to_string();
