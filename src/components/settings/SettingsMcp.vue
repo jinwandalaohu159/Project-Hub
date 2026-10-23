@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ListChecks, Loader2 } from "lucide-vue-next";
 import CodeSnippet from "./CodeSnippet.vue";
 import McpToolsDialog from "./McpToolsDialog.vue";
+import HelpTip from "./HelpTip.vue";
 import { useMcpTools } from "../../composables/useMcpTools";
 import { useToast } from "../../composables/useToast";
 import { useI18n } from "../../composables/useI18n";
@@ -76,12 +77,10 @@ const statusLabel = computed(() => {
       <div class="flex items-center justify-between gap-3">
         <div class="setting-copy">
           <div class="setting-name flex items-center gap-2">
-            {{ t('mcpServer') }}
+            <span>{{ t('mcpServer') }}<HelpTip :text="`${t('mcpDescription')}\n${t('mcpLocalOnly')}`" /></span>
             <span class="mcp-dot" :class="{ on: status?.running, bad: status?.enabled && !status?.running }" />
             <span class="text-[11px] font-normal text-muted">{{ statusLabel }}</span>
           </div>
-          <div class="setting-description">{{ t('mcpDescription') }}</div>
-          <div class="setting-description">{{ t('mcpLocalOnly') }}</div>
         </div>
         <button
           class="switch-btn"

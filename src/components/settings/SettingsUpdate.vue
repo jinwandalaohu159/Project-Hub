@@ -6,6 +6,7 @@ import { useUpdater } from "../../composables/useUpdater";
 import { useToast } from "../../composables/useToast";
 import { useI18n } from "../../composables/useI18n";
 import { errorText } from "../../utils/errors";
+import HelpTip from "./HelpTip.vue";
 
 const {
   currentVersion,
@@ -107,8 +108,7 @@ const status = computed(() => {
       </div>
       <div class="flex items-center justify-between gap-3">
         <div class="setting-copy">
-          <div class="setting-name">{{ t('updateAuto') }}</div>
-          <div class="setting-description">{{ t('updateAutoDescription') }}</div>
+          <div class="setting-name">{{ t('updateAuto') }}<HelpTip :text="t('updateAutoDescription')" /></div>
         </div>
         <button class="switch-btn shrink-0" :class="{ active: autoUpdate }" role="switch" :aria-checked="autoUpdate" @click="toggleAutoUpdate">
           <span class="switch-thumb" />

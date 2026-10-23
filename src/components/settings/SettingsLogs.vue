@@ -9,6 +9,7 @@ import { APP_LOG_ID, type LogEntry, type LogSettings } from '../../composables/u
 import { errorText } from '../../utils/errors'
 import SelectMenu from '../SelectMenu.vue'
 import LogViewer from './LogViewer.vue'
+import HelpTip from './HelpTip.vue'
 import { isTauri } from '../../utils/env'
 
 const { t } = useI18n()
@@ -202,10 +203,7 @@ onBeforeUnmount(() => {
   <div class="setting-group">
     <label class="setting-label">{{ t('logs') }}</label>
     <div class="setting-card">
-      <div class="setting-copy">
-        <div class="setting-name">{{ t('operationLogs') }}</div>
-        <div class="setting-description">{{ t('operationLogsDescription') }}</div>
-      </div>
+      <div class="setting-name">{{ t('operationLogs') }}<HelpTip :text="t('operationLogsDescription')" /></div>
       <div class="select-field">
         <span>{{ t('logProject') }}</span>
         <SelectMenu

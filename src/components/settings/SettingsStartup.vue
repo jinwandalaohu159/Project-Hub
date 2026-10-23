@@ -5,6 +5,7 @@ import { useI18n } from '../../composables/useI18n'
 import { useToast } from '../../composables/useToast'
 import { errorText } from '../../utils/errors'
 import { isTauri } from '../../utils/env'
+import HelpTip from './HelpTip.vue'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -56,10 +57,7 @@ onMounted(loadAutostart)
   <div class="setting-group">
     <label class="setting-label">{{ t('startup') }}</label>
     <div class="setting-row">
-      <div class="setting-copy">
-        <div class="setting-name">{{ t('launchOnStartup') }}</div>
-        <div class="setting-description">{{ t('launchOnStartupDescription') }}</div>
-      </div>
+      <div class="setting-name">{{ t('launchOnStartup') }}<HelpTip :text="t('launchOnStartupDescription')" /></div>
       <button
         class="switch-btn"
         :class="{ active: autostartEnabled }"

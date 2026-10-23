@@ -24,7 +24,7 @@ fn app(names: &[&str]) -> Option<Launch> {
 
 pub(in crate::openers) fn known() -> Vec<Known> {
     vec![
-        known!("terminal", "终端 / Terminal", Terminal, || app(&["Terminal"])),
+        known!("terminal", "Terminal", Terminal, || app(&["Terminal"])),
         known!("iterm", "iTerm", Terminal, || app(&["iTerm"])),
         known!("warp", "Warp", Terminal, || app(&["Warp"])),
         known!("ghostty", "Ghostty", Terminal, || app(&["Ghostty"])),
@@ -44,7 +44,7 @@ pub(in crate::openers) fn known() -> Vec<Known> {
         known!("rider", "Rider", Editor, || app(&["Rider"])),
         known!("android-studio", "Android Studio", Editor, || app(&["Android Studio"])),
         known!("xcode", "Xcode", Editor, || app(&["Xcode"])),
-        known!("finder", "访达 / Finder", Files, || {
+        known!("finder", "Finder", Files, || {
             Some(launch(PathBuf::from("/usr/bin/open"), &["{path}"]))
         }),
     ]

@@ -272,6 +272,10 @@
   margin-top: 12px;
 }
 
+.settings-overlay .log-actions:first-child {
+  margin-top: 0;
+}
+
 .settings-overlay .primary-btn,
 .settings-overlay .secondary-btn {
   height: 32px;

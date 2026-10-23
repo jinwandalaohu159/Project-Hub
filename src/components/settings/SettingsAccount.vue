@@ -6,6 +6,7 @@ import { useConfirm } from "../../composables/useConfirm";
 import { useToast } from "../../composables/useToast";
 import { useI18n } from "../../composables/useI18n";
 import { errorText } from "../../utils/errors";
+import HelpTip from "./HelpTip.vue";
 
 const { settings, account, ensureLoaded, refresh, requestLogin, logout, updateAuthor } = useAccount();
 const { confirm } = useConfirm();
@@ -123,9 +124,8 @@ async function signOut() {
   </div>
 
   <div class="setting-group">
-    <label class="setting-label">{{ t('authorSection') }}</label>
+    <label class="setting-label">{{ t('authorSection') }}<HelpTip :text="t('authorDescription')" :size="12" /></label>
     <div class="setting-card space-y-3">
-      <div class="setting-description mt-0">{{ t('authorDescription') }}</div>
       <label class="number-field">
         <span>{{ t('authorName') }}</span>
         <input

@@ -4,6 +4,8 @@ import { nextTick, ref, onBeforeUnmount } from 'vue'
 const props = withDefaults(defineProps<{
   text: string
   position?: 'top' | 'bottom'
+  /** Longer text: wraps within a narrow box, keeping its line breaks. */
+  wrap?: boolean
 }>(), {
   position: 'top',
 })
@@ -71,6 +73,7 @@ onBeforeUnmount(() => {
       v-if="visible"
       ref="tooltipRef"
       class="tooltip-floating"
+      :class="{ 'tooltip-wrap': wrap }"
       :style="tooltipStyle"
     >{{ text }}</div>
   </Teleport>
@@ -95,5 +98,16 @@ onBeforeUnmount(() => {
   /* Above dialogs (10000) and dropdown lists (10001). */
   z-index: 10002;
   letter-spacing: 0;
+}
+
+.tooltip-floating.tooltip-wrap {
+  /* Its own width, not whatever room is left beside where it is placed. */
+  width: max-content;
+  max-width: 260px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: pre-line;
 }
 </style>

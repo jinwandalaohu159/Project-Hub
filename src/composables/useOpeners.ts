@@ -16,6 +16,16 @@ const KINDS: { kind: OpenerView["kind"]; title: TranslationKey }[] = [
   { kind: "other", title: "openerOther" },
 ];
 
+/** The system's own programs, whose names are translated; the rest keep the name they are listed under. */
+const SYSTEM_NAMES: Record<string, TranslationKey> = {
+  terminal: "openerNameTerminal",
+  "x-terminal-emulator": "openerNameTerminal",
+  finder: "openerNameFinder",
+  files: "openerNameFiles",
+  cmd: "openerNameCmd",
+  explorer: "openerNameExplorer",
+};
+
 /** `list` under a heading per kind, leaving out kinds with nothing in them. */
 function grouped(list: OpenerView[]) {
   return KINDS.map(({ kind, title }) => ({ kind, title, items: list.filter((opener) => opener.kind === kind) })).filter(
@@ -28,11 +38,19 @@ export function useOpeners() {
   const { t } = useI18n();
   const toast = useToast();
 
+  /** The list in the current language. */
+  const named = computed(() =>
+    openers.value.map((opener) => {
+      const key = opener.custom ? undefined : SYSTEM_NAMES[opener.id];
+      return key ? { ...opener, name: t(key) } : opener;
+    }),
+  );
+
   /** What the menu offers: one group per kind, hidden ones left out. */
-  const menuGroups = computed(() => grouped(openers.value.filter((opener) => !opener.hidden)));
+  const menuGroups = computed(() => grouped(named.value.filter((opener) => !opener.hidden)));
 
   /** Everything, hidden ones included, grouped the same way. */
-  const manageSections = computed(() => grouped(openers.value));
+  const manageSections = computed(() => grouped(named.value));
 
   /** Looks the programs up again; they may have been installed or removed meanwhile. */
   async function load() {

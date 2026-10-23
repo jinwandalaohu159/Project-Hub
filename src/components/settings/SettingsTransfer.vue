@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Download, FolderOpen, Loader2, Upload } from "lucide-vue-next";
 import ModalShell from "../ModalShell.vue";
+import HelpTip from "./HelpTip.vue";
 import { useProjectStore } from "../../composables/useProjectStore";
 import { useAccount } from "../../composables/useAccount";
 import { useToast } from "../../composables/useToast";
@@ -170,9 +171,8 @@ async function runImport() {
 
 <template>
   <div class="setting-group">
-    <label class="setting-label">{{ t('transferSection') }}</label>
-    <div class="setting-card space-y-3">
-      <div class="setting-description mt-0">{{ t('transferDescription') }}</div>
+    <label class="setting-label">{{ t('transferSection') }}<HelpTip :text="t('transferDescription')" :size="12" /></label>
+    <div class="setting-card">
       <div class="log-actions">
         <button class="secondary-btn action-btn" :disabled="exporting" @click="exportAll">
           <Loader2 v-if="exporting" :size="14" class="spin" />

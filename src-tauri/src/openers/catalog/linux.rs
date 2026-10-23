@@ -16,7 +16,7 @@ pub(in crate::openers) fn known() -> Vec<Known> {
         known!("wezterm", "WezTerm", Terminal, || found(&["wezterm"], &["start", "--cwd", "{path}"])),
         known!("tilix", "Tilix", Terminal, || found(&["tilix"], &["--working-directory={path}"])),
         known!("ghostty", "Ghostty", Terminal, || found(&["ghostty"], &[])),
-        known!("x-terminal-emulator", "终端 / Terminal", Terminal, || found(&["x-terminal-emulator"], &[])),
+        known!("x-terminal-emulator", "Terminal", Terminal, || found(&["x-terminal-emulator"], &[])),
         known!("vscode", "VS Code", Editor, || found(&["code"], &["{path}"])),
         known!("cursor", "Cursor", Editor, || found(&["cursor"], &["{path}"])),
         known!("windsurf", "Windsurf", Editor, || found(&["windsurf"], &["{path}"])),
@@ -31,6 +31,6 @@ pub(in crate::openers) fn known() -> Vec<Known> {
         known!("rustrover", "RustRover", Editor, || found(&["rustrover"], &["{path}"])),
         known!("phpstorm", "PhpStorm", Editor, || found(&["phpstorm"], &["{path}"])),
         known!("android-studio", "Android Studio", Editor, || found(&["android-studio", "studio.sh"], &["{path}"])),
-        known!("files", "文件管理器 / Files", Files, || found(&["xdg-open"], &["{path}"])),
+        known!("files", "Files", Files, || found(&["xdg-open"], &["{path}"])),
     ]
 }

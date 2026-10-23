@@ -123,7 +123,7 @@ pub(in crate::openers) fn known() -> Vec<Known> {
             first_existing([system32("WindowsPowerShell\\v1.0\\powershell.exe")])
                 .map(|program| console(program, &["-NoExit"]))
         }),
-        known!("cmd", "命令提示符 / Command Prompt", Terminal, || {
+        known!("cmd", "Command Prompt", Terminal, || {
             first_existing([system32("cmd.exe")]).map(|program| console(program, &[]))
         }),
         known!("git-bash", "Git Bash", Terminal, || {
@@ -150,7 +150,7 @@ pub(in crate::openers) fn known() -> Vec<Known> {
         known!("android-studio", "Android Studio", Editor, || {
             editor("bin\\studio64.exe", &["Android\\Android Studio"], "Android Studio", &[])
         }),
-        known!("explorer", "文件资源管理器 / File Explorer", Files, || {
+        known!("explorer", "File Explorer", Files, || {
             first_existing([env_dir("SystemRoot").join("explorer.exe")]).map(|program| launch(program, &["{path}"]))
         }),
     ]

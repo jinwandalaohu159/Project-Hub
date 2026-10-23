@@ -6,6 +6,7 @@ import { AUTO_EDITOR_THEME, EDITOR_THEMES, findEditorTheme, type EditorTheme } f
 import SelectMenu, { type SelectOption } from "../SelectMenu.vue";
 import CodeThemeLabel from "./CodeThemeLabel.vue";
 import CodeThemePreview from "./CodeThemePreview.vue";
+import HelpTip from "./HelpTip.vue";
 
 const { t } = useI18n();
 const { choice, activeTheme } = useCodeTheme();
@@ -24,9 +25,8 @@ function themeOf(value: string): EditorTheme {
 
 <template>
   <div class="setting-group">
-    <label class="setting-label">{{ t('codeTheme') }}</label>
+    <label class="setting-label">{{ t('codeTheme') }}<HelpTip :text="t('codeThemeDescription')" :size="12" /></label>
     <div class="setting-card space-y-3">
-      <div class="setting-description mt-0">{{ t('codeThemeDescription') }}</div>
       <SelectMenu v-model="choice" :options="options">
         <template #selected="{ option }">
           <CodeThemeLabel :theme="themeOf(option.value)" :label="option.label" />
