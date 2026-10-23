@@ -4,7 +4,6 @@ import { Settings2, SquareArrowOutUpRight } from "lucide-vue-next";
 import Tooltip from "../Tooltip.vue";
 import ContextMenu from "../ContextMenu.vue";
 import OpenerIcon from "./OpenerIcon.vue";
-import OpenerDefaultTag from "./OpenerDefaultTag.vue";
 import OpenersDialog from "./OpenersDialog.vue";
 import { useI18n } from "../../composables/useI18n";
 import { useOpeners } from "../../composables/useOpeners";
@@ -61,12 +60,12 @@ function manage() {
   </Tooltip>
 
   <ContextMenu :at="menuAt" :anchor="buttonRef" :min-width="210" @close="menuAt = null">
-    <template v-for="(group, index) in menuGroups" :key="index">
+    <template v-for="(group, index) in menuGroups" :key="group.kind">
       <div v-if="index > 0" class="menu-separator" />
-      <button v-for="opener in group" :key="opener.id" class="menu-item" @click="choose(opener)">
+      <div class="opener-group">{{ t(group.title) }}</div>
+      <button v-for="opener in group.items" :key="opener.id" class="menu-item" @click="choose(opener)">
         <span class="flex text-muted"><OpenerIcon :kind="opener.kind" /></span>
         <span class="min-w-0 flex-1 truncate text-left">{{ opener.name }}</span>
-        <OpenerDefaultTag v-if="opener.default" />
       </button>
     </template>
     <p v-if="menuGroups.length === 0" class="opener-empty">{{ t('openWithNone') }}</p>
@@ -81,6 +80,13 @@ function manage() {
 </template>
 
 <style scoped>
+.opener-group {
+  padding: 4px 14px 2px;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .opener-empty {
   max-width: 240px;
   padding: 6px 14px;

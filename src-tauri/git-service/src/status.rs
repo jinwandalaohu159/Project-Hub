@@ -1,4 +1,4 @@
-//! Working-tree status: unsaved changes, empty-folder markers and default ignore rules.
+//! Working-tree status: unsaved changes and empty-folder markers.
 //!
 //! Git cannot record an empty folder, so Project Hub keeps one by saving a hidden marker file in it.
 //! An empty folder without that marker is therefore an unsaved change like any new file, and every
@@ -7,44 +7,13 @@
 
 #[cfg(windows)]
 use crate::command::hidden_command;
+use crate::default_ignores::hides_folder;
 use crate::{FileDiff, FileStatus, GitService, StatusSummary};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 pub(crate) const KEEP_FILE_NAME: &str = ".project-hub-keep";
-pub(crate) const DEFAULT_IGNORE_MARKER: &str = "# Project Hub default ignores";
-pub(crate) const DEFAULT_IGNORE_RULES: &[&str] = &[
-    "node_modules/",
-    "dist/",
-    "build/",
-    "target/",
-    ".cache/",
-    ".vite/",
-    ".next/",
-    ".nuxt/",
-    "coverage/",
-    "*.log",
-    ".DS_Store",
-    ".env.local",
-];
-pub(crate) const IGNORED_DIRS: &[&str] = &[
-    ".git",
-    "node_modules",
-    "__pycache__",
-    ".vscode",
-    "dist",
-    "build",
-    "target",
-    ".cache",
-    ".vite",
-    ".next",
-    ".nuxt",
-    "coverage",
-    ".idea",
-    "vendor",
-    "out",
-];
 
 /// What the empty-folder rules see inside one folder.
 #[derive(Default)]
@@ -164,7 +133,7 @@ impl GitService {
                 listing.has_content = true;
                 continue;
             }
-            if self.is_ignored_dir_name(&name) || self.is_nested_git_worktree(&path) {
+            if name == ".git" || hides_folder(&name, rel.is_empty()) || self.is_nested_git_worktree(&path) {
                 continue;
             }
             listing.has_content = true;
@@ -240,43 +209,8 @@ impl GitService {
         Ok(output.split('\0').filter(|path| !path.is_empty()).map(str::to_string).collect())
     }
 
-    pub(crate) fn is_ignored_dir_name(&self, name: &str) -> bool {
-        IGNORED_DIRS.contains(&name)
-    }
-
     pub(crate) fn is_nested_git_worktree(&self, path: &Path) -> bool {
         path.join(".git").exists()
-    }
-
-    pub fn ensure_default_ignores(&self, repo_path: &str) -> Result<(), String> {
-        let info_dir = Path::new(repo_path).join(".git").join("info");
-        if !Path::new(repo_path).join(".git").is_dir() {
-            return Ok(());
-        }
-
-        fs::create_dir_all(&info_dir)
-            .map_err(|e| format!("FILE_ERROR:{e}"))?;
-        let exclude_path = info_dir.join("exclude");
-        let existing = fs::read_to_string(&exclude_path).unwrap_or_default();
-        if existing.contains(DEFAULT_IGNORE_MARKER) {
-            return Ok(());
-        }
-
-        let mut content = existing;
-        if !content.is_empty() && !content.ends_with('\n') {
-            content.push('\n');
-        }
-        content.push('\n');
-        content.push_str(DEFAULT_IGNORE_MARKER);
-        content.push('\n');
-        for rule in DEFAULT_IGNORE_RULES {
-            content.push_str(rule);
-            content.push('\n');
-        }
-
-        fs::write(&exclude_path, content)
-            .map_err(|e| format!("FILE_ERROR:{e}"))?;
-        Ok(())
     }
 
     #[cfg(windows)]

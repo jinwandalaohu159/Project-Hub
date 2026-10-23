@@ -4,7 +4,7 @@
 //! Adding a rule for files that earlier records already contain also stops saving them (they stay
 //! on disk), otherwise the rule would have no effect; that shows up as an unsaved change.
 
-use crate::status::DEFAULT_IGNORE_RULES;
+use crate::default_ignores::DEFAULT_IGNORE_RULES;
 use crate::GitService;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;

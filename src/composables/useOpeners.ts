@@ -5,43 +5,34 @@ import { useToast } from "./useToast";
 import { errorText } from "../utils/errors";
 import type { OpenerView } from "../types";
 
-/** Shared across the toolbar menu, the folder menu and the manage dialog. */
+/** Shared by the toolbar menu and the manage dialog. */
 const openers = ref<OpenerView[]>([]);
 
-const KIND_ORDER = { terminal: 0, editor: 1, files: 2 } as const;
+/** The groups, in the order they are listed. */
+const KINDS: { kind: OpenerView["kind"]; title: TranslationKey }[] = [
+  { kind: "terminal", title: "openerTerminal" },
+  { kind: "editor", title: "openerEditor" },
+  { kind: "files", title: "openerFiles" },
+  { kind: "other", title: "openerOther" },
+];
+
+/** `list` under a heading per kind, leaving out kinds with nothing in them. */
+function grouped(list: OpenerView[]) {
+  return KINDS.map(({ kind, title }) => ({ kind, title, items: list.filter((opener) => opener.kind === kind) })).filter(
+    (group) => group.items.length > 0,
+  );
+}
 
 /** Opening folders in terminals, editors and the file manager, and managing that list. */
 export function useOpeners() {
   const { t } = useI18n();
   const toast = useToast();
 
-  const defaultOpener = computed(() => openers.value.find((opener) => opener.default) ?? null);
+  /** What the menu offers: one group per kind, hidden ones left out. */
+  const menuGroups = computed(() => grouped(openers.value.filter((opener) => !opener.hidden)));
 
-  /** What the menu offers, in groups with a line between them: the default alone first, then one
-   *  group per kind. Hidden ones are left out. */
-  const menuGroups = computed(() => {
-    const shown = openers.value
-      .filter((opener) => !opener.hidden)
-      .sort((a, b) => Number(b.default) - Number(a.default) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
-    const groups: OpenerView[][] = [];
-    for (const opener of shown) {
-      const last = groups[groups.length - 1];
-      if (last && !last[0].default && last[0].kind === opener.kind) last.push(opener);
-      else groups.push([opener]);
-    }
-    return groups;
-  });
-
-  /** Everything, hidden ones included, under a heading per kind and the user's own last. */
-  const manageSections = computed(() => {
-    const sections: { title: TranslationKey; items: OpenerView[] }[] = [
-      { title: "openerTerminal", items: openers.value.filter((o) => !o.custom && o.kind === "terminal") },
-      { title: "openerEditor", items: openers.value.filter((o) => !o.custom && o.kind === "editor") },
-      { title: "openerFiles", items: openers.value.filter((o) => !o.custom && o.kind === "files") },
-      { title: "openerCustom", items: openers.value.filter((o) => o.custom) },
-    ];
-    return sections.filter((section) => section.items.length > 0);
-  });
+  /** Everything, hidden ones included, grouped the same way. */
+  const manageSections = computed(() => grouped(openers.value));
 
   /** Looks the programs up again; they may have been installed or removed meanwhile. */
   async function load() {
@@ -69,12 +60,10 @@ export function useOpeners() {
 
   return {
     openers,
-    defaultOpener,
     menuGroups,
     manageSections,
     load,
     openFolder,
-    setDefault: (id: string) => change("set_default_opener", { id }),
     setHidden: (id: string, hidden: boolean) => change("set_opener_hidden", { id, hidden }),
     addCustom: (name: string, program: string, args: string) => change("add_custom_opener", { name, program, args }),
     removeCustom: (id: string) => change("remove_custom_opener", { id }),

@@ -53,6 +53,55 @@ fn default_ignores_hide_dependency_and_build_dirs() {
 }
 
 #[test]
+fn generic_build_names_are_hidden_only_at_the_root() {
+    let repo = TestRepo::new();
+    let root = std::path::Path::new(&repo.path);
+    for file in ["build/out.bin", "src/build/main.rs", "app/dist/index.ts", "pkg/__pycache__/m.pyc"] {
+        let path = root.join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "x").unwrap();
+    }
+    fs::create_dir_all(root.join("src").join("target").join("empty")).unwrap();
+    fs::create_dir_all(root.join("lib").join("node_modules").join("empty")).unwrap();
+
+    svc().save_version(&repo.path, "save").unwrap();
+
+    let tracked = git_out(&repo.path, &["ls-files"]);
+    assert!(tracked.contains("src/build/main.rs") && tracked.contains("app/dist/index.ts"), "{tracked}");
+    assert!(tracked.contains(&format!("src/target/empty/{KEEP_FILE_NAME}")), "{tracked}");
+    assert!(!tracked.contains("out.bin") && !tracked.contains("__pycache__"), "{tracked}");
+    assert!(!root.join("lib/node_modules/empty").join(KEEP_FILE_NAME).exists());
+    assert!(!svc().has_unsaved_changes(&repo.path).unwrap());
+}
+
+#[test]
+fn old_default_rules_are_replaced_and_user_rules_kept() {
+    let repo = TestRepo::new();
+    let exclude = std::path::Path::new(&repo.path).join(".git").join("info").join("exclude");
+    fs::create_dir_all(exclude.parent().unwrap()).unwrap();
+    fs::write(&exclude, "secret.txt
+
+# Project Hub default ignores
+node_modules/
+build/
+").unwrap();
+    let nested = std::path::Path::new(&repo.path).join("src").join("build").join("a.rs");
+    fs::create_dir_all(nested.parent().unwrap()).unwrap();
+    fs::write(&nested, "a").unwrap();
+
+    let paths: Vec<String> = svc().get_status(&repo.path).unwrap().into_iter().map(|diff| diff.path).collect();
+    assert_eq!(paths, ["src/"]);
+    let content = fs::read_to_string(&exclude).unwrap();
+    assert!(content.starts_with("secret.txt
+"), "{content}");
+    assert!(content.contains("
+/build/
+") && !content.contains("
+build/
+"), "{content}");
+}
+
+#[test]
 fn add_all_does_not_save_default_ignored_dirs() {
     let repo = TestRepo::new();
     let node_module_file = std::path::Path::new(&repo.path)

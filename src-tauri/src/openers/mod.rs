@@ -4,7 +4,7 @@
 //! - `custom`: programs the user added
 //! - `launch`: starting one on a folder
 //!
-//! Here: the list the user sees, with their default and hidden choices applied.
+//! Here: the list the user sees, with their hidden choices applied.
 
 mod catalog;
 mod custom;
@@ -22,13 +22,14 @@ pub enum OpenerKind {
     Terminal,
     Editor,
     Files,
+    /// Programs the user added.
+    Other,
 }
 
 /// What the user chose; kept in the app settings.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OpenerPrefs {
-    pub default: Option<String>,
     pub hidden: Vec<String>,
     pub custom: Vec<CustomOpener>,
 }
@@ -42,7 +43,6 @@ pub struct OpenerView {
     pub program: String,
     pub custom: bool,
     pub hidden: bool,
-    pub default: bool,
 }
 
 struct Opener {
@@ -60,7 +60,6 @@ impl Opener {
                 program: launch.program.to_string_lossy().into_owned(),
                 custom,
                 hidden: false,
-                default: false,
             },
             launch,
         }
@@ -74,7 +73,7 @@ fn available(prefs: &OpenerPrefs) -> Vec<Opener> {
         .into_iter()
         .filter_map(|known| Some(Opener::new(known.id, known.name, known.kind, (known.find)()?, false)));
     let added = prefs.custom.iter().map(|custom| {
-        let mut opener = Opener::new(&custom.id, &custom.name, OpenerKind::Editor, custom.launch(), true);
+        let mut opener = Opener::new(&custom.id, &custom.name, OpenerKind::Other, custom.launch(), true);
         // What the user chose, not what starts it (`open` for macOS app bundles).
         opener.view.program = custom.program.clone();
         opener
@@ -83,18 +82,6 @@ fn available(prefs: &OpenerPrefs) -> Vec<Opener> {
 
     for opener in &mut openers {
         opener.view.hidden = prefs.hidden.contains(&opener.view.id);
-    }
-    // The chosen default while it is installed and shown; otherwise the first terminal.
-    let visible = |opener: &&Opener| !opener.view.hidden;
-    let default = prefs
-        .default
-        .as_ref()
-        .and_then(|id| openers.iter().filter(visible).find(|o| &o.view.id == id))
-        .or_else(|| openers.iter().filter(visible).find(|o| o.view.kind == OpenerKind::Terminal))
-        .or_else(|| openers.iter().find(visible))
-        .map(|opener| opener.view.id.clone());
-    for opener in &mut openers {
-        opener.view.default = Some(&opener.view.id) == default.as_ref();
     }
     openers
 }
@@ -133,24 +120,18 @@ mod tests {
         let id = add_custom(&mut prefs, " My tool ", exe.to_str().unwrap(), "").unwrap();
         assert_eq!(prefs.custom[0].name, "My tool");
         assert_eq!(prefs.custom[0].args, "{path}");
-        assert!(list(&prefs).iter().any(|view| view.id == id && view.custom));
+        assert!(list(&prefs).iter().any(|view| view.id == id && view.custom && view.kind == OpenerKind::Other));
 
         set_hidden(&mut prefs, &id, true);
-        prefs.default = Some(id.clone());
-        let view = list(&prefs).into_iter().find(|view| view.id == id).unwrap();
-        // A hidden program is never the default.
-        assert!(view.hidden && !view.default);
+        assert!(list(&prefs).into_iter().find(|view| view.id == id).unwrap().hidden);
 
         remove_custom(&mut prefs, &id);
-        assert!(prefs.custom.is_empty() && prefs.hidden.is_empty() && prefs.default.is_none());
+        assert!(prefs.custom.is_empty() && prefs.hidden.is_empty());
     }
 
     #[test]
-    fn exactly_one_default_while_anything_is_shown() {
-        let prefs = OpenerPrefs::default();
-        let views = list(&prefs);
-        if !views.is_empty() {
-            assert_eq!(views.iter().filter(|view| view.default).count(), 1);
-        }
+    fn settings_saved_with_a_default_still_load() {
+        let prefs: OpenerPrefs = serde_json::from_str(r#"{"default":"cmd","hidden":["x"],"custom":[]}"#).unwrap();
+        assert_eq!(prefs.hidden, ["x"]);
     }
 }

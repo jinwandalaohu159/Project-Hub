@@ -150,7 +150,7 @@ const guide: Guide = {
           type: "list",
           items: [
             "The top of the Files panel has **New file**, **New folder** and **Refresh**.",
-            "The **Open with** button opens the project folder in a terminal, VS Code, Cursor, PyCharm and so on: what is installed is listed by itself, and **Manage programs…** sets the default, hides what you do not use or adds any other program. Right-click a folder to open it with the default.",
+            "The **Open with** button opens the project folder in a terminal, VS Code, Cursor, PyCharm and so on: what is installed is listed by itself under **Terminals**, **Editors** and **Folders**, and **Manage programs…** hides what you do not use or adds any other program (listed under **Other**).",
             "**Right-click** a file or folder to create, **Rename**, **Stop saving** or **Delete** it.",
             "Drag a file onto another folder to move it.",
           ],
@@ -192,7 +192,7 @@ const guide: Guide = {
           type: "list",
           items: [
             "Rules are written to the project's `.gitignore`, so they are saved and uploaded with it and work on other computers too.",
-            "Rules under **Hidden by Project Hub** apply on this computer only and need no attention.",
+            "Rules under **Hidden by Project Hub** apply on this computer only and need no attention: common dependencies, caches and build output of many languages (`node_modules`, `__pycache__`, `.gradle`…) are hidden at any depth; `build`, `dist`, `target` and `coverage` only at the project root, so same-named subfolders are still saved.",
             "Files saved before they were hidden stop being saved (they stay on disk); it takes effect with the next save.",
           ],
         },

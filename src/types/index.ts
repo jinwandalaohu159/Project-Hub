@@ -197,9 +197,8 @@ export interface ImportReport {
 export interface OpenerView {
   id: string;
   name: string;
-  kind: "terminal" | "editor" | "files";
+  kind: "terminal" | "editor" | "files" | "other";
   program: string;
   custom: boolean;
   hidden: boolean;
-  default: boolean;
 }

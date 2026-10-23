@@ -18,15 +18,6 @@ pub(crate) fn open_folder_with(id: String, path: String, state: tauri::State<App
 }
 
 #[tauri::command]
-pub(crate) fn set_default_opener(id: String, state: tauri::State<AppState>) -> Result<Vec<OpenerView>, String> {
-    change(&state, |prefs| {
-        openers::set_hidden(prefs, &id, false);
-        prefs.default = Some(id);
-        Ok(())
-    })
-}
-
-#[tauri::command]
 pub(crate) fn set_opener_hidden(id: String, hidden: bool, state: tauri::State<AppState>) -> Result<Vec<OpenerView>, String> {
     change(&state, |prefs| {
         openers::set_hidden(prefs, &id, hidden);

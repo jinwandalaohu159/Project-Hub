@@ -1,4 +1,4 @@
-use super::{agent, releases_page, UPDATE_REPO, USER_AGENT};
+use super::{releases_page, UPDATE_REPO, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use std::{
     sync::{Mutex, PoisonError},
@@ -87,6 +87,30 @@ fn pick_asset(assets: &[Asset]) -> Option<Asset> {
         .map(|asset| (*asset).clone())
 }
 
+/// A check gives up on a connection this quickly: connecting to GitHub sometimes hangs, and a fresh
+/// attempt usually goes straight through, so it beats waiting on the stuck one.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(6);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
+const ATTEMPTS: usize = 2;
+
+/// Sends a request up to `ATTEMPTS` times while the connection itself fails; answers from GitHub
+/// (even errors) are final.
+fn call_with_retry(request: impl Fn(&ureq::Agent) -> Result<ureq::Response, ureq::Error>) -> Result<ureq::Response, ureq::Error> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        .redirects(0)
+        .build();
+    let mut result = request(&agent);
+    for _ in 1..ATTEMPTS {
+        match result {
+            Err(ureq::Error::Transport(_)) => result = request(&agent),
+            _ => break,
+        }
+    }
+    result
+}
+
 /// The release last fetched from the API. Checks only look up the latest tag through the website,
 /// which the API's hourly limit (60 requests without signing in) does not cover, and ask the API
 /// just once per new tag, so they can run every few minutes.
@@ -96,15 +120,7 @@ static LAST_RELEASE: Mutex<Option<Release>> = Mutex::new(None);
 /// (".../releases/tag/v1.2.3"). None while nothing is published.
 fn latest_tag() -> Result<Option<String>, String> {
     let url = format!("https://github.com/{UPDATE_REPO}/releases/latest");
-    let response = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(15))
-        .timeout(Duration::from_secs(30))
-        .redirects(0)
-        .build()
-        .get(&url)
-        .set("User-Agent", USER_AGENT)
-        .call();
-    match response {
+    match call_with_retry(|agent| agent.get(&url).set("User-Agent", USER_AGENT).call()) {
         Ok(response) => Ok(response
             .header("Location")
             .and_then(|location| location.split_once("/releases/tag/"))
@@ -116,12 +132,13 @@ fn latest_tag() -> Result<Option<String>, String> {
 
 fn fetch_release(tag: &str) -> Result<Release, String> {
     let url = format!("https://api.github.com/repos/{UPDATE_REPO}/releases/tags/{tag}");
-    match agent(Duration::from_secs(30))
-        .get(&url)
-        .set("Accept", "application/vnd.github+json")
-        .set("User-Agent", USER_AGENT)
-        .call()
-    {
+    match call_with_retry(|agent| {
+        agent
+            .get(&url)
+            .set("Accept", "application/vnd.github+json")
+            .set("User-Agent", USER_AGENT)
+            .call()
+    }) {
         Ok(response) => response.into_json().map_err(|e| e.to_string()),
         Err(ureq::Error::Status(403 | 429, _)) => Err("UPDATE_RATE_LIMITED".to_string()),
         Err(error) => Err(format!("Cannot reach GitHub: {error}")),
@@ -133,12 +150,13 @@ fn latest_release() -> Result<Option<Release>, String> {
     let Some(tag) = latest_tag()? else {
         return Ok(None);
     };
-    let mut last = LAST_RELEASE.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(release) = last.as_ref().filter(|release| release.tag_name == tag) {
-        return Ok(Some(release.clone()));
+    let cached = LAST_RELEASE.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    if let Some(release) = cached.filter(|release| release.tag_name == tag) {
+        return Ok(Some(release));
     }
+    // Not holding the cache while asking GitHub: a slow answer must not hold up other checks.
     let release = fetch_release(&tag)?;
-    *last = Some(release.clone());
+    *LAST_RELEASE.lock().unwrap_or_else(PoisonError::into_inner) = Some(release.clone());
     Ok(Some(release))
 }
 

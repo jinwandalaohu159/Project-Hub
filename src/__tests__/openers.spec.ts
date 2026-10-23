@@ -9,14 +9,14 @@ const opener = (id: string, kind: OpenerView["kind"], extra: Partial<OpenerView>
   program: `/bin/${id}`,
   custom: false,
   hidden: false,
-  default: false,
   ...extra,
 });
 
 const list: OpenerView[] = [
   opener("terminal", "terminal"),
   opener("hidden-shell", "terminal", { hidden: true }),
-  opener("vscode", "editor", { default: true }),
+  opener("mine", "other", { custom: true }),
+  opener("vscode", "editor"),
   opener("files", "files"),
   opener("cursor", "editor"),
 ];
@@ -28,17 +28,30 @@ import OpenWithButton from "../components/openers/OpenWithButton.vue";
 import { useI18n } from "../composables/useI18n";
 
 describe("the open-with menu", () => {
-  it("puts the default first, groups the rest by kind and leaves hidden ones out", async () => {
+  it("groups programs by kind under headings and leaves hidden ones out", async () => {
     useI18n().setLocale("en");
     const wrapper = mount(OpenWithButton, { props: { path: "/work/demo" }, attachTo: document.body });
     await flushPromises();
     await wrapper.get("button").trigger("click");
     await flushPromises();
 
-    const items = Array.from(document.querySelectorAll(".context-menu .menu-item")).map((item) => item.textContent?.trim());
-    expect(items).toEqual(["vscodeDefault", "terminal", "cursor", "files", "Manage programs…"]);
+    const entries = Array.from(document.querySelectorAll(".context-menu .opener-group, .context-menu .menu-item")).map((item) =>
+      item.textContent?.trim(),
+    );
+    expect(entries).toEqual([
+      "Terminals",
+      "terminal",
+      "Editors",
+      "vscode",
+      "cursor",
+      "Folders",
+      "files",
+      "Other",
+      "mine",
+      "Manage programs…",
+    ]);
 
-    (document.querySelectorAll<HTMLButtonElement>(".context-menu .menu-item")[1]).click();
+    (document.querySelectorAll<HTMLButtonElement>(".context-menu .menu-item")[0]).click();
     await flushPromises();
     expect(invoke).toHaveBeenCalledWith("open_folder_with", { id: "terminal", path: "/work/demo" });
     wrapper.unmount();

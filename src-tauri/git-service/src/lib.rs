@@ -15,6 +15,7 @@ macro_rules! lock_repo {
 mod branches;
 mod bundle;
 mod command;
+mod default_ignores;
 mod draft;
 mod history;
 mod housekeeping;

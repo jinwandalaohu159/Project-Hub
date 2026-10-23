@@ -218,7 +218,6 @@ pub fn run() {
             commands::update::set_auto_update,
             commands::openers::list_openers,
             commands::openers::open_folder_with,
-            commands::openers::set_default_opener,
             commands::openers::set_opener_hidden,
             commands::openers::add_custom_opener,
             commands::openers::remove_custom_opener,

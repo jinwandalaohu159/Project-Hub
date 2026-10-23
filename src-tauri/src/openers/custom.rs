@@ -62,9 +62,6 @@ pub fn add(prefs: &mut OpenerPrefs, name: &str, program: &str, args: &str) -> Re
 pub fn remove(prefs: &mut OpenerPrefs, id: &str) {
     prefs.custom.retain(|custom| custom.id != id);
     prefs.hidden.retain(|hidden| hidden != id);
-    if prefs.default.as_deref() == Some(id) {
-        prefs.default = None;
-    }
 }
 
 /// Splits an argument line on spaces, keeping "quoted parts" together.

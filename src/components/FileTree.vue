@@ -20,7 +20,6 @@ import ContextMenu from "./ContextMenu.vue";
 import NamePromptDialog from "./NamePromptDialog.vue";
 import IgnoreRulesDialog from "./IgnoreRulesDialog.vue";
 import OpenWithButton from "./openers/OpenWithButton.vue";
-import { useOpeners } from "../composables/useOpeners";
 import { EyeOff, FilePlus, FolderPlus, RefreshCw } from "lucide-vue-next";
 
 const {
@@ -47,7 +46,6 @@ const { notifyWorkingTreeChanged } = useProjectEvents();
 const { confirm } = useConfirm();
 const toast = useToast();
 const { update: updateIgnoreRules } = useIgnoreRules();
-const { defaultOpener, openFolder } = useOpeners();
 const showIgnoreRules = ref(false);
 const treeRoot = ref<HTMLElement | null>(null);
 const fileTreeBody = ref<HTMLElement | null>(null);
@@ -404,12 +402,6 @@ function closeContextMenu() {
     </div>
     <ContextMenu :at="contextMenu" @close="closeContextMenu">
       <template v-if="contextMenu">
-        <template v-if="contextMenu.node.is_dir && defaultOpener">
-          <button class="menu-item" @click="openFolder(defaultOpener, contextMenu.node.path)">
-            {{ t('openWithIn', { name: defaultOpener.name }) }}
-          </button>
-          <div class="menu-separator" />
-        </template>
         <button class="menu-item" @click="createNewFile(contextMenu.node)">{{ t('newFile') }}</button>
         <button class="menu-item" @click="createNewFolder(contextMenu.node)">{{ t('newFolder') }}</button>
         <div class="menu-separator" />
