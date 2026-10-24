@@ -2756,7 +2756,7 @@ dependencies = [
 
 [[package]]
 name = "project-hub"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
