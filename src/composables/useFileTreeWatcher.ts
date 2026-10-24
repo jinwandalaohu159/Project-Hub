@@ -1,4 +1,6 @@
-import { onBeforeUnmount } from "vue";
+import { onBeforeUnmount, watch } from "vue";
+import { useDiskWatch } from "./useDiskWatch";
+import { useProjectEvents } from "./useProjectEvents";
 
 interface WatcherOptions {
   /** Re-reads the visible part of the tree. */
@@ -7,18 +9,24 @@ interface WatcherOptions {
   isBusy: () => boolean;
 }
 
+/** How often the tree looks again on its own: rarely while the folder is watched. */
+const POLL_WATCHED_MS = 30000;
+const POLL_UNWATCHED_MS = 5000;
+
 /**
- * Keeps the file tree in step with the disk: file-system events trigger a debounced refresh, and a
- * slow poll catches anything the watcher misses (or replaces it where watching is unavailable).
+ * Keeps the file tree in step with the disk: it refreshes when the project's files change (see
+ * useDiskWatch), and a poll catches anything missed.
  */
 export function useFileTreeWatcher(options: WatcherOptions) {
-  let unwatch: (() => void) | null = null;
+  const { diskChangeToken } = useProjectEvents();
+  const { watching } = useDiskWatch();
+  let running = false;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let isRefreshing = false;
   let suppressRefreshUntil = 0;
 
-  function stop() {
+  function clearTimers() {
     if (refreshTimer) {
       clearTimeout(refreshTimer);
       refreshTimer = null;
@@ -26,10 +34,6 @@ export function useFileTreeWatcher(options: WatcherOptions) {
     if (pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
-    }
-    if (unwatch) {
-      unwatch();
-      unwatch = null;
     }
   }
 
@@ -60,32 +64,33 @@ export function useFileTreeWatcher(options: WatcherOptions) {
     suppressRefreshUntil = Date.now() + ms;
   }
 
-  function startPolling(intervalMs: number) {
+  function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(() => {
       if (document.visibilityState === "visible") {
         scheduleRefresh(0);
       }
-    }, intervalMs);
+    }, watching.value ? POLL_WATCHED_MS : POLL_UNWATCHED_MS);
   }
 
-  async function start(projectPath: string) {
-    stop();
-    try {
-      const { watch: watchFs } = await import("@tauri-apps/plugin-fs");
-      unwatch = await watchFs(
-        projectPath,
-        () => {
-          scheduleRefresh();
-        },
-        { recursive: true, delayMs: 250 }
-      );
-      startPolling(30000);
-    } catch {
-      unwatch = null;
-      startPolling(5000);
-    }
+  /** Follows the open project; call again after switching. */
+  function start() {
+    running = true;
+    clearTimers();
+    startPolling();
   }
+
+  function stop() {
+    running = false;
+    clearTimers();
+  }
+
+  watch(watching, () => {
+    if (running) startPolling();
+  });
+  watch(diskChangeToken, () => {
+    if (running) scheduleRefresh(0);
+  });
 
   onBeforeUnmount(stop);
 

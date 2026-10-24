@@ -7,7 +7,7 @@
 
 use crate::GitService;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 
 pub(crate) const DEFAULT_IGNORE_MARKER: &str = "# Project Hub default ignores";
 
@@ -104,11 +104,40 @@ pub(crate) fn hides_folder(name: &str, at_root: bool) -> bool {
             Some(_) => return false,
             None => pattern,
         };
-        match pattern.split_once('*') {
-            Some((prefix, suffix)) => name.len() >= prefix.len() + suffix.len() && name.starts_with(prefix) && name.ends_with(suffix),
-            None => name == pattern,
-        }
+        name_matches(pattern, name)
     })
+}
+
+/// Whether a default rule for files (`*.log`, `.DS_Store`) hides one called `name`.
+fn hides_file(name: &str) -> bool {
+    DEFAULT_IGNORE_RULES
+        .iter()
+        .filter(|rule| !rule.ends_with('/'))
+        .any(|pattern| name_matches(pattern, name))
+}
+
+/// `pattern` is a name with at most one `*`.
+fn name_matches(pattern: &str, name: &str) -> bool {
+    match pattern.split_once('*') {
+        Some((prefix, suffix)) => name.len() >= prefix.len() + suffix.len() && name.starts_with(prefix) && name.ends_with(suffix),
+        None => name == pattern,
+    }
+}
+
+/// Whether the default rules hide `relative`, a path inside a project: it lies in a hidden folder
+/// or is a hidden file. A hidden folder itself is not (its appearance is worth showing).
+pub fn hidden_by_default(relative: &Path) -> bool {
+    let names: Vec<&str> = relative
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect();
+    let Some((last, folders)) = names.split_last() else {
+        return false;
+    };
+    folders.iter().enumerate().any(|(depth, name)| hides_folder(name, depth == 0)) || hides_file(last)
 }
 
 impl GitService {
@@ -160,5 +189,19 @@ mod tests {
         assert!(hides_folder("my_pkg.egg-info", false));
         assert!(!hides_folder("vendor", true));
         assert!(!hides_folder(".vscode", false));
+    }
+
+    #[test]
+    fn paths_inside_hidden_folders_and_hidden_files_are_hidden() {
+        let hidden = |path: &str| hidden_by_default(Path::new(path));
+        assert!(hidden("node_modules/vue/index.js"));
+        assert!(hidden("web/node_modules/vue/index.js"));
+        assert!(hidden("target/debug/app"));
+        assert!(hidden("logs/server.log"));
+        assert!(hidden("src/.DS_Store"));
+        assert!(!hidden("src/build/tool.rs"));
+        assert!(!hidden("node_modules"));
+        assert!(!hidden("src/main.rs"));
+        assert!(!hidden(""));
     }
 }

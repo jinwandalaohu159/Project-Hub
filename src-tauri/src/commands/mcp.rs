@@ -53,7 +53,39 @@ impl mcp::McpHost for AppHost {
     }
 }
 
+/// Tries this many times at launch, this far apart, before reporting the port as taken.
+const LAUNCH_ATTEMPTS: u32 = 15;
+const LAUNCH_RETRY: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Starts the server when the app opens. Its port may still be held for a moment, say by the copy
+/// an update just replaced, so a failure is retried for a while before it is logged.
+pub(crate) fn start_mcp_at_launch(app: &tauri::AppHandle) {
+    for attempt in 1..=LAUNCH_ATTEMPTS {
+        if start_mcp(app, attempt == LAUNCH_ATTEMPTS) {
+            return;
+        }
+        std::thread::sleep(LAUNCH_RETRY);
+        if !still_failing(app) {
+            return;
+        }
+    }
+}
+
+/// Whether the server is still down after failing to start; the settings may have started (or
+/// turned off) the server meanwhile.
+fn still_failing(app: &tauri::AppHandle) -> bool {
+    let state = app.state::<AppState>();
+    let failing = state.mcp.lock().is_ok_and(|runtime| runtime.server.is_none() && runtime.error.is_some());
+    failing
+}
+
 pub(crate) fn restart_mcp(app: &tauri::AppHandle) {
+    start_mcp(app, true);
+}
+
+/// (Re)starts the server as the settings say; false when it should run but could not start.
+/// `report` logs that failure.
+fn start_mcp(app: &tauri::AppHandle, report: bool) -> bool {
     let state = app.state::<AppState>();
     let (enabled, port) = state
         .settings
@@ -61,7 +93,7 @@ pub(crate) fn restart_mcp(app: &tauri::AppHandle) {
         .map(|s| (s.mcp_enabled, s.mcp_port))
         .unwrap_or((false, settings::DEFAULT_MCP_PORT));
     let Ok(mut runtime) = state.mcp.lock() else {
-        return;
+        return true;
     };
     let was_running = runtime.server.is_some();
     if let Some(server) = runtime.server.take() {
@@ -72,17 +104,21 @@ pub(crate) fn restart_mcp(app: &tauri::AppHandle) {
         if was_running {
             crate::logs::app_log("info", "mcp.stop", "");
         }
-        return;
+        return true;
     }
     let host: Arc<dyn mcp::McpHost> = Arc::new(AppHost { app: app.clone() });
     match mcp::McpServer::start(port, host) {
         Ok(server) => {
             runtime.server = Some(server);
             crate::logs::app_log("info", "mcp.start", &mcp::endpoint(port));
+            true
         }
         Err(error) => {
-            crate::logs::app_log("error", "mcp.start", &format!("port {port}: {error}"));
+            if report {
+                crate::logs::app_log("error", "mcp.start", &format!("port {port}: {error}"));
+            }
             runtime.error = Some(error);
+            false
         }
     }
 }

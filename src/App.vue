@@ -21,6 +21,7 @@ import UpdateBanner from './components/UpdateBanner.vue'
 import UpdateDialog from './components/UpdateDialog.vue'
 import TitleBar from './components/TitleBar.vue'
 import { useUpdater } from './composables/useUpdater'
+import { useDiskWatch } from './composables/useDiskWatch'
 import { Plus, Columns2, Rows2 } from 'lucide-vue-next'
 import Tooltip from './components/Tooltip.vue'
 import { isTauri } from './utils/env'
@@ -31,6 +32,7 @@ const { t } = useI18n()
 const { notifyVersionContextChanged } = useProjectEvents()
 useTheme()
 const updater = useUpdater()
+const diskWatch = useDiskWatch()
 
 const showSettings = ref(false)
 let unlistenOpenSettings: UnlistenFn | null = null
@@ -76,6 +78,7 @@ onMounted(async () => {
   }
 
   updater.startAutoCheck()
+  void diskWatch.start()
 
   unlistenOpenSettings = await listen('open-settings', () => {
     showSettings.value = true
@@ -95,6 +98,7 @@ onUnmounted(() => {
   unlistenRepoChanged?.()
   unlistenRepoChanged = null
   updater.stopAutoCheck()
+  diskWatch.stop()
 })
 </script>
 

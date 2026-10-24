@@ -10,6 +10,7 @@ mod settings;
 mod transfer;
 mod tray;
 mod update;
+mod worktree;
 
 use project_service::ProjectService;
 use settings::AppSettings;
@@ -25,6 +26,8 @@ pub struct AppState {
     pub project_service: Mutex<ProjectService>,
     pub settings: Mutex<AppSettings>,
     pub mcp: Mutex<commands::mcp::McpRuntime>,
+    /// The open project's folder, watched for changes made in other programs.
+    pub worktree: Mutex<Option<worktree::WorktreeWatch>>,
 }
 
 pub(crate) fn trace_startup(event: impl AsRef<str>) {
@@ -79,6 +82,9 @@ pub fn run() {
     trace_startup("project_service:done");
 
     tauri::Builder::default()
+        // First, so a second launch hands over to the running app before anything else starts:
+        // two copies would fight over the MCP port and the projects list.
+        .plugin(tauri_plugin_single_instance::init(tray::on_second_launch))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -103,7 +109,7 @@ pub fn run() {
             tray::schedule_tray_registration_retries(app.handle());
 
             let mcp_handle = app.handle().clone();
-            tauri::async_runtime::spawn_blocking(move || commands::mcp::restart_mcp(&mcp_handle));
+            tauri::async_runtime::spawn_blocking(move || commands::mcp::start_mcp_at_launch(&mcp_handle));
 
             trace_startup(format!(
                 "setup:create_main_window visible={}",
@@ -137,6 +143,7 @@ pub fn run() {
             project_service: Mutex::new(project_service),
             settings: Mutex::new(app_settings),
             mcp: Mutex::new(commands::mcp::McpRuntime::default()),
+            worktree: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             commands::projects::add_project,
@@ -150,6 +157,8 @@ pub fn run() {
             commands::mcp::set_mcp_config,
             commands::mcp::get_mcp_tools,
             commands::mcp::try_mcp_tool,
+            commands::watch::watch_worktree,
+            commands::watch::unwatch_worktree,
             autostart::get_autostart_enabled,
             logs::get_app_log_settings,
             logs::set_app_log_settings,

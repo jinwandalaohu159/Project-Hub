@@ -9,3 +9,4 @@ pub(crate) mod preferences;
 pub(crate) mod projects;
 pub(crate) mod transfer;
 pub(crate) mod update;
+pub(crate) mod watch;

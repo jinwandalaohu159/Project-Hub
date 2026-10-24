@@ -27,6 +27,7 @@ mod status;
 mod sync;
 mod tags;
 
+pub use default_ignores::hidden_by_default;
 pub use ignore::{validate_ignore_rule, IgnoreRules, IgnoreUpdate};
 pub use remote::base64_encode;
 pub use rewrite::{RECORD_NOT_IN_VERSION, RECORD_UNDELETABLE};

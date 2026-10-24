@@ -138,7 +138,7 @@ watch(selectedProject, (project) => {
   activeNodePath.value = null;
   draggingNode.value = null;
   if (project) {
-    startWatchingFileTree(project.path);
+    startWatchingFileTree();
   } else {
     stopWatchingFileTree();
   }

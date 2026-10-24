@@ -5,9 +5,16 @@ const commitLogRefreshToken = ref(0);
 const versionSwitchToken = ref(0);
 const workingTreeChangeCount = ref(0);
 const syncRefreshToken = ref(0);
+const diskChangeToken = ref(0);
 
 export function useProjectEvents() {
   function notifyWorkingTreeChanged() {
+    workingTreeRefreshToken.value += 1;
+  }
+
+  /** Files of the open project changed on disk, outside the app (see useDiskWatch). */
+  function notifyDiskChanged() {
+    diskChangeToken.value += 1;
     workingTreeRefreshToken.value += 1;
   }
 
@@ -42,7 +49,9 @@ export function useProjectEvents() {
     versionSwitchToken,
     workingTreeChangeCount,
     syncRefreshToken,
+    diskChangeToken,
     notifyWorkingTreeChanged,
+    notifyDiskChanged,
     notifySyncChanged,
     notifyVersionSaved,
     notifyVersionContextChanged,

@@ -164,6 +164,17 @@ pub(crate) fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Given by the login-time start: open in the tray, without a window.
+const HIDDEN_FLAG: &str = "--hidden";
+
 pub(crate) fn should_start_hidden() -> bool {
-    std::env::args().any(|arg| arg == "--hidden")
+    std::env::args().any(|arg| arg == HIDDEN_FLAG)
+}
+
+/// The app was opened again while running; that copy quits and this one answers. Opening it
+/// brings the window forward; a login-time start finds it already running and changes nothing.
+pub(crate) fn on_second_launch(app: &tauri::AppHandle, args: Vec<String>, _cwd: String) {
+    if !args.iter().any(|arg| arg == HIDDEN_FLAG) {
+        show_main_window(app);
+    }
 }
